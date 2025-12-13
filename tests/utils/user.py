@@ -1,10 +1,10 @@
-from fastapi.testclient import TestClient
-from sqlmodel import Session
+from pms_backend.stapi.testclient import TestClient
+from pms_backend.lmodel import Session
 
-from ...utils import crud
-from ...core.config import settings
-from ...models.models import User, UserCreate, UserUpdate
-from .utils import random_email, random_lower_string
+from pms_backend..utils import crud
+from pms_backend..core.config import settings
+from pms_backend..models.models import User, UserCreate, UserUpdate
+from pms_backend.tils import random_email, random_lower_string
 
 
 def user_authentication_headers(

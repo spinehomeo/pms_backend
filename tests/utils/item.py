@@ -1,9 +1,9 @@
-from sqlmodel import Session
+from pms_backend.lmodel import Session
 
-from ...utils import crud
-from ...models.models import Item, ItemCreate
-from .user import create_random_user
-from .utils import random_lower_string
+from pms_backend..utils import crud
+from pms_backend..models.models import Item, ItemCreate
+from pms_backend.ser import create_random_user
+from pms_backend.tils import random_lower_string
 
 
 def create_random_item(db: Session) -> Item:

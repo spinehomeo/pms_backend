@@ -8,10 +8,10 @@ from jwt.exceptions import JWTDecodeError
 from pydantic import ValidationError
 from sqlmodel import Session
 
-from core import security
-from core.config import settings
-from core.db import engine
-from models.models import TokenPayload, User
+from pms_backend.core import security
+from pms_backend.core.config import settings
+from pms_backend.core.db import engine
+from pms_backend.models.models import TokenPayload, User
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"

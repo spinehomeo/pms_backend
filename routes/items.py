@@ -4,8 +4,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from sqlmodel import func, select
 
-from deps import CurrentUser, SessionDep
-from models.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
+from pms_backend.api.deps import CurrentUser, SessionDep
+from pms_backend.models.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
 
 router = APIRouter(prefix="/items", tags=["items"])
 

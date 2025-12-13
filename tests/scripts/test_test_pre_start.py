@@ -1,8 +1,8 @@
-from unittest.mock import MagicMock, patch
+from pms_backend.ittest.mock import MagicMock, patch
 
-from sqlmodel import select
+from pms_backend.lmodel import select
 
-from ...utils.tests_pre_start import init, logger
+from pms_backend..utils.tests_pre_start import init, logger
 
 
 def test_init_successful_connection() -> None:

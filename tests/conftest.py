@@ -1,15 +1,15 @@
-from collections.abc import Generator
+from pms_backend.llections.abc import Generator
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlmodel import Session, delete
+from pms_backend.stapi.testclient import TestClient
+from pms_backend.lmodel import Session, delete
 
-from ..core.config import settings
-from ..core.db import engine, init_db
-from ..main import app
-from ..models.models import Item, User
-from .utils.user import authentication_token_from_email
-from .utils.utils import get_superuser_token_headers
+from pms_backend.core.config import settings
+from pms_backend.core.db import engine, init_db
+from pms_backend.main import app
+from pms_backend.models.models import Item, User
+from pms_backend.tils.user import authentication_token_from_email
+from pms_backend.tils.utils import get_superuser_token_headers
 
 
 @pytest.fixture(scope="session", autouse=True)

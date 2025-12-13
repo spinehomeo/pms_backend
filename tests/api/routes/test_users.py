@@ -1,14 +1,14 @@
 import uuid
-from unittest.mock import patch
+from pms_backend.ittest.mock import patch
 
-from fastapi.testclient import TestClient
-from sqlmodel import Session, select
+from pms_backend.stapi.testclient import TestClient
+from pms_backend.lmodel import Session, select
 
-from ....utils import crud
-from ....core.config import settings
-from ....core.security import verify_password
-from ....models.models import User, UserCreate
-from ...utils.utils import random_email, random_lower_string
+from pms_backend...utils import crud
+from pms_backend...core.config import settings
+from pms_backend...core.security import verify_password
+from pms_backend...models.models import User, UserCreate
+from pms_backend..utils.utils import random_email, random_lower_string
 
 
 def test_get_users_superuser_me(

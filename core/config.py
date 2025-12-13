@@ -25,8 +25,8 @@ def parse_cors(v: Any) -> list[str] | str:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # Use top level .env file (one level above ./backend/)
-        env_file="../.env",
+        # Use top level .env file (project root)
+        env_file=".env",
         env_ignore_empty=True,
         extra="ignore",
     )
@@ -55,10 +55,17 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = ""
+    DATA_BASE_URL: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def SQLALCHEMY_DATABASE_URI(self) -> PostgresDsn:
+    def SQLALCHEMY_DATABASE_URI(self) -> str:
+        """
+        Prefer a full connection URL from pms_backend.ATA_BASE_URL` (e.g. Neon/managed DB URL)
+        otherwise build one from pms_backend.dividual Postgres parts.
+        """
+        if self.DATA_BASE_URL:
+            return str(self.DATA_BASE_URL)
         return PostgresDsn.build(
             scheme="postgresql+psycopg",
             username=self.POSTGRES_USER,

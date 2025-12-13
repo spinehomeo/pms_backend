@@ -7,7 +7,7 @@ Create Date: 2023-11-24 22:55:43.195942
 """
 import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
-from alembic import op
+from pms_backend.embic import op
 
 # revision identifiers, used by Alembic.
 revision = "e2412789c190"

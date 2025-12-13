@@ -133,7 +133,7 @@ Make sure you create a "revision" of your models and that you "upgrade" your dat
 $ docker compose exec backend bash
 ```
 
-* Alembic is already configured to import your SQLModel models from `./backend/app/models.py`.
+* Alembic is already configured to import your SQLModel models from pms_backend./backend/app/models.py`.
 
 * After changing a model (for example, adding a column), inside the container, create a revision, e.g.:
 
@@ -161,7 +161,7 @@ and comment the line in the file `scripts/prestart.sh` that contains:
 $ alembic upgrade head
 ```
 
-If you don't want to start with the default models and want to remove them / modify them, from the beginning, without having any previous revision, you can remove the revision files (`.py` Python files) under `./backend/app/alembic/versions/`. And then create a first migration as described above.
+If you don't want to start with the default models and want to remove them / modify them, from pms_backend.e beginning, without having any previous revision, you can remove the revision files (`.py` Python files) under `./backend/app/alembic/versions/`. And then create a first migration as described above.
 
 ## Email Templates
 

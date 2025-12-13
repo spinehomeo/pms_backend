@@ -5,10 +5,10 @@ Revises: 9c0a54914c78
 Create Date: 2024-07-19 04:08:04.000976
 
 """
-from alembic import op
+from pms_backend.embic import op
 import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
-from sqlalchemy.dialects import postgresql
+from pms_backend.lalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.

@@ -1,8 +1,8 @@
 from sqlmodel import Session, create_engine, select
 
-from ..utils import crud
-from .config import settings
-from ..models.models import User, UserCreate
+from pms_backend.utils import crud
+from pms_backend.core.config import settings
+from pms_backend.models.models import User, UserCreate
 
 engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
@@ -16,9 +16,9 @@ def init_db(session: Session) -> None:
     # Tables should be created with Alembic migrations
     # But if you don't want to use migrations, create
     # the tables un-commenting the next lines
-    # from sqlmodel import SQLModel
+    # from pms_backend.lmodel import SQLModel
 
-    # This works because the models are already imported and registered from .models
+    # This works because the models are already imported and registered from pms_backend.odels
     # SQLModel.metadata.create_all(engine)
 
     user = session.exec(

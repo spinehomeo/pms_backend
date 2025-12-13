@@ -1,10 +1,10 @@
-from fastapi.encoders import jsonable_encoder
-from sqlmodel import Session
+from pms_backend.stapi.encoders import jsonable_encoder
+from pms_backend.lmodel import Session
 
-from ...utils import crud
-from ...core.security import verify_password
-from ...models.models import User, UserCreate, UserUpdate
-from ..utils.utils import random_email, random_lower_string
+from pms_backend..utils import crud
+from pms_backend..core.security import verify_password
+from pms_backend..models.models import User, UserCreate, UserUpdate
+from pms_backend.utils.utils import random_email, random_lower_string
 
 
 def test_create_user(db: Session) -> None:

@@ -4,15 +4,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, delete, func, select
 
-from ...utils import crud
-from ..deps import (
+from pms_backend.utils import crud
+from pms_backend.api.deps import (
     CurrentUser,
     SessionDep,
     get_current_active_superuser,
 )
-from ...core.config import settings
-from ...core.security import get_password_hash, verify_password
-from ...models.models import (
+from pms_backend.core.config import settings
+from pms_backend.core.security import get_password_hash, verify_password
+from pms_backend.models.models import (
     Item,
     Message,
     UpdatePassword,
@@ -24,7 +24,7 @@ from ...models.models import (
     UserUpdate,
     UserUpdateMe,
 )
-from ...utils.utils import generate_new_account_email, send_email
+from pms_backend.utils.utils import generate_new_account_email, send_email
 
 router = APIRouter(prefix="/users", tags=["users"])
 
