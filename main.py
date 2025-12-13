@@ -8,7 +8,10 @@ from pms_backend.core.config import settings
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
-    return f"{route.tags[0]}-{route.name}"
+    tags = getattr(route, "tags", None) or []
+    tag = tags[0] if len(tags) > 0 else "default"
+    name = getattr(route, "name", None) or "endpoint"
+    return f"{tag}-{name}"
 
 
 if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
@@ -32,8 +35,10 @@ if settings.all_cors_origins:
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-
 @app.get("/")
 def health():
     return {"status": "ok"}
+
+
+
 

@@ -35,4 +35,4 @@ EXPOSE 8000
 
 # Runtime command: run the FastAPI app using Uvicorn. The FastAPI app object
 # is defined in `main.py` at the repository root as `app`.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "pms_backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
