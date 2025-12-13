@@ -1,44 +1,38 @@
-FROM python:3.10
-
+FROM python:3.14
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /app/
+# Use the repository root as the working directory
+WORKDIR /
 
-# Install uv
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
+# Install uv tooling from the official uv image (copies /uv and /uvx into /bin)
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /bin/
 
-# Place executables in the environment at the front of the path
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#using-the-environment
-ENV PATH="/app/.venv/bin:$PATH"
+# Ensure virtualenv executables (created by uv) are first in PATH
+ENV PATH="/.venv/bin:$PATH"
 
-# Compile bytecode
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#compiling-bytecode
+# uv settings
 ENV UV_COMPILE_BYTECODE=1
-
-# uv Cache
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#caching
 ENV UV_LINK_MODE=copy
 
-# Install dependencies
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
+# Copy dependency manifests first to leverage Docker cache
+COPY pyproject.toml uv.lock alembic.ini /
+
+# Install dependencies using uv. NOTE: these RUNs use BuildKit mount features.
+# Build command requires BuildKit enabled (DOCKER_BUILDKIT=1) when building.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=bind,source=uv.lock,target=/uv.lock,readonly \
     uv sync --frozen --no-install-project
 
-ENV PYTHONPATH=/app
+# Copy application source into the image root
+COPY ./ /
 
-COPY ./scripts /app/scripts
-
-COPY ./pyproject.toml ./uv.lock ./alembic.ini /app/
-
-COPY ./app /app/app
-COPY ./tests /app/tests
-
-# Sync the project
-# Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
+# Final sync to ensure environment reflects project (uses cache for speed)
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync
 
-CMD ["fastapi", "run", "--workers", "4", "app/main.py"]
+# Expose the port the app will listen on
+EXPOSE 8000
+
+# Runtime command: run the FastAPI app using Uvicorn. The FastAPI app object
+# is defined in `main.py` at the repository root as `app`.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
