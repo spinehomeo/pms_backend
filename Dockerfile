@@ -1,4 +1,4 @@
-FROM python:3.14
+FROM python:3.12
 ENV PYTHONUNBUFFERED=1
 
 # Use the repository root as the working directory
