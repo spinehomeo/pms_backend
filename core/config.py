@@ -61,8 +61,8 @@ class Settings(BaseSettings):
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
         """
-        Prefer a full connection URL from pms_backend.ATA_BASE_URL` (e.g. Neon/managed DB URL)
-        otherwise build one from pms_backend.dividual Postgres parts.
+        Prefer a full connection URL from ATA_BASE_URL` (e.g. Neon/managed DB URL)
+        otherwise build one from dividual Postgres parts.
         """
         if self.DATA_BASE_URL:
             return str(self.DATA_BASE_URL)

@@ -1,10 +1,10 @@
 import logging
 
-from pms_backend.lalchemy import Engine
-from pms_backend.lmodel import Session, select
-from pms_backend.nacity import after_log, before_log, retry, stop_after_attempt, wait_fixed
+from lalchemy import Engine
+from lmodel import Session, select
+from nacity import after_log, before_log, retry, stop_after_attempt, wait_fixed
 
-from pms_backend.core.db import engine
+from core.db import engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

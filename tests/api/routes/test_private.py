@@ -1,8 +1,8 @@
-from pms_backend.stapi.testclient import TestClient
-from pms_backend.lmodel import Session, select
+from stapi.testclient import TestClient
+from lmodel import Session, select
 
-from pms_backend...core.config import settings
-from pms_backend...models.models import User
+from ..core.config import settings
+from ..models.models import User
 
 
 def test_create_user(client: TestClient, db: Session) -> None:

@@ -1,10 +1,10 @@
 import uuid
 
-from pms_backend.stapi.testclient import TestClient
-from pms_backend.lmodel import Session
+from stapi.testclient import TestClient
+from lmodel import Session
 
-from pms_backend...core.config import settings
-from pms_backend..utils.item import create_random_item
+from ..core.config import settings
+from .utils.item import create_random_item
 
 
 def test_create_item(

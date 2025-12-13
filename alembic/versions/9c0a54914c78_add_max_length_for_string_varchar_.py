@@ -5,7 +5,7 @@ Revises: e2412789c190
 Create Date: 2024-06-17 14:42:44.639457
 
 """
-from pms_backend.embic import op
+from embic import op
 import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
 

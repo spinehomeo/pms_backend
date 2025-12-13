@@ -3,9 +3,9 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from pms_backend.api.deps import SessionDep
-from pms_backend.core.security import get_password_hash
-from pms_backend.models.models import (
+from api.deps import SessionDep
+from core.security import get_password_hash
+from models.models import (
     User,
     UserPublic,
 )

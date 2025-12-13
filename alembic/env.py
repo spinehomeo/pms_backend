@@ -1,8 +1,8 @@
 import os
-from pms_backend.gging.config import fileConfig
+from gging.config import fileConfig
 
-from pms_backend.embic import context
-from pms_backend.lalchemy import engine_from_config, pool
+from embic import context
+from lalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -14,16 +14,16 @@ fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from pms_backend.app import mymodel
+# from app import mymodel
 # target_metadata = mymodel.Base.metadata
 # target_metadata = None
 
-from pms_backend.models.models import SQLModel  # noqa
-from pms_backend.core.config import settings # noqa
+from models.models import SQLModel  # noqa
+from core.config import settings # noqa
 
 target_metadata = SQLModel.metadata
 
-# other values from pms_backend.e config, defined by the needs of env.py,
+# other values from e config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.

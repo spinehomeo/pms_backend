@@ -1,8 +1,8 @@
 import logging
 
-from pms_backend.lmodel import Session
+from lmodel import Session
 
-from pms_backend.core.db import engine, init_db
+from core.db import engine, init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

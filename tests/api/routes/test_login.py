@@ -1,15 +1,15 @@
-from pms_backend.ittest.mock import patch
+from ittest.mock import patch
 
-from pms_backend.stapi.testclient import TestClient
-from pms_backend.lmodel import Session
+from stapi.testclient import TestClient
+from lmodel import Session
 
-from pms_backend...core.config import settings
-from pms_backend...core.security import verify_password
-from pms_backend...utils.crud import create_user
-from pms_backend...models.models import UserCreate
-from pms_backend...utils.utils import generate_password_reset_token
-from pms_backend..utils.user import user_authentication_headers
-from pms_backend..utils.utils import random_email, random_lower_string
+from ..core.config import settings
+from ..core.security import verify_password
+from ..utils.crud import create_user
+from ..models.models import UserCreate
+from ..utils.utils import generate_password_reset_token
+from .utils.user import user_authentication_headers
+from .utils.utils import random_email, random_lower_string
 
 
 def test_get_access_token(client: TestClient) -> None:

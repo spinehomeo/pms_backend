@@ -3,8 +3,8 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from pms_backend.core.security import get_password_hash, verify_password
-from pms_backend.models.models import Item, ItemCreate, User, UserCreate, UserUpdate
+from core.security import get_password_hash, verify_password
+from models.models import Item, ItemCreate, User, UserCreate, UserUpdate
 
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:

@@ -9,8 +9,8 @@ import jwt
 # from jwt import InvalidTokenError
 from jinja2 import Template
 
-from pms_backend.core import security
-from pms_backend.core.config import settings
+from core import security
+from core.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

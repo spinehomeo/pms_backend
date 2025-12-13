@@ -1,9 +1,9 @@
 import random
 import string
 
-from pms_backend.stapi.testclient import TestClient
+from stapi.testclient import TestClient
 
-from pms_backend..core.config import settings
+from .core.config import settings
 
 
 def random_lower_string() -> str:

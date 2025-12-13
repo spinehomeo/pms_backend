@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
-from pms_backend.utils import crud
-from pms_backend.api.deps import CurrentUser, SessionDep, get_current_active_superuser
-from pms_backend.core import security
-from pms_backend.core.config import settings
-from pms_backend.core.security import get_password_hash
-from pms_backend.models.models import Message, NewPassword, Token, UserPublic
-from pms_backend.utils.utils import (
+from utils import crud
+from api.deps import CurrentUser, SessionDep, get_current_active_superuser
+from core import security
+from core.config import settings
+from core.security import get_password_hash
+from models.models import Message, NewPassword, Token, UserPublic
+from utils.utils import (
     generate_password_reset_token,
     generate_reset_password_email,
     send_email,
