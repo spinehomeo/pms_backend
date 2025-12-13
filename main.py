@@ -6,6 +6,31 @@ from starlette.middleware.cors import CORSMiddleware
 from pms_backend.api.router import api_router
 from pms_backend.core.config import settings
 
+import os
+import sys
+print("Current directory:", os.getcwd())
+print("Directory contents:", os.listdir('.'))
+print("Parent contents:", os.listdir('..'))
+
+
+
+print("=== DEBUG INFO ===")
+print("Current dir:", os.getcwd())
+print("Python path:", sys.path)
+print("Files in current dir:", os.listdir('.'))
+if 'api' in os.listdir('.'):
+    print("✓ 'api' directory exists")
+else:
+    print("✗ 'api' directory NOT found!")
+print("==================")
+
+# Debug for deployment
+print("=== NORTHFLANK DEBUG ===")
+print("Working directory:", os.getcwd())
+print("Python path:", sys.path)
+print("Listing current directory:", os.listdir('.'))
+print("=======================")
+
 
 def custom_generate_unique_id(route: APIRoute) -> str:
     tags = getattr(route, "tags", None) or []
