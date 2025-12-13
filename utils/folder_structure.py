@@ -15,5 +15,5 @@ def print_tree(start_path, indent=""):
         if os.path.isdir(path):
             print_tree(path, indent + "|   ")
 
-root = "../"  # Change this to your desired root directory
+root = "./"  # Change this to your desired root directory
 print_tree(root)
