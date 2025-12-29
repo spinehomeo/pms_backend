@@ -12,9 +12,9 @@ from api.deps import (
 )
 from core.config import settings
 from core.security import get_password_hash, verify_password
-from models.models import (
-    Item,
-    Message,
+from models.items import Item
+from models.login import Message
+from models.user import (
     UpdatePassword,
     User,
     UserCreate,

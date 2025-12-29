@@ -10,7 +10,8 @@ from api.deps import CurrentUser, SessionDep, get_current_active_superuser
 from core import security
 from core.config import settings
 from core.security import get_password_hash
-from models.models import Message, NewPassword, Token, UserPublic
+from models.login import Message, NewPassword, Token
+from models.user import UserPublic
 from utils.utils import (
     generate_password_reset_token,
     generate_reset_password_email,

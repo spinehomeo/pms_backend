@@ -1,6 +1,6 @@
 import logging
 
-from lmodel import Session
+from sqlmodel import Session
 
 from core.db import engine, init_db
 
@@ -21,3 +21,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# (pms-backend) F:\2_PROJECTS\B_PMS\pms_backend>python.exe -m utils.initial_data
+# INFO:__main__:Creating initial data
+# INFO:__main__:Initial data created

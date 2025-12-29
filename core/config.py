@@ -55,25 +55,7 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = ""
-    DATA_BASE_URL: str | None = None
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def SQLALCHEMY_DATABASE_URI(self) -> str:
-        """
-        Prefer a full connection URL from ATA_BASE_URL` (e.g. Neon/managed DB URL)
-        otherwise build one from dividual Postgres parts.
-        """
-        if self.DATA_BASE_URL:
-            return str(self.DATA_BASE_URL)
-        return PostgresDsn.build(
-            scheme="postgresql+psycopg",
-            username=self.POSTGRES_USER,
-            password=self.POSTGRES_PASSWORD,
-            host=self.POSTGRES_SERVER,
-            port=self.POSTGRES_PORT,
-            path=self.POSTGRES_DB,
-        )
+    DATABASE_URL: str | None = None
 
     SMTP_TLS: bool = True
     SMTP_SSL: bool = False
@@ -98,8 +80,8 @@ class Settings(BaseSettings):
         return bool(self.SMTP_HOST and self.EMAILS_FROM_EMAIL)
 
     EMAIL_TEST_USER: EmailStr = "test@example.com"
-    FIRST_SUPERUSER: EmailStr
-    FIRST_SUPERUSER_PASSWORD: str
+    FIRST_SUPERUSER: EmailStr = "admin@example.com"
+    FIRST_SUPERUSER_PASSWORD: str = "spinehomeo"
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

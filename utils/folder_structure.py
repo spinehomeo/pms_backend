@@ -17,3 +17,29 @@ def print_tree(start_path, indent=""):
 
 root = "./"  # Change this to your desired root directory
 print_tree(root)
+
+
+# import os
+# import sys
+# print("Current directory:", os.getcwd())
+# print("Directory contents:", os.listdir('.'))
+# print("Parent contents:", os.listdir('..'))
+
+
+
+# print("=== DEBUG INFO ===")
+# print("Current dir:", os.getcwd())
+# print("Python path:", sys.path)
+# print("Files in current dir:", os.listdir('.'))
+# if 'api' in os.listdir('.'):
+#     print("✓ 'api' directory exists")
+# else:
+#     print("✗ 'api' directory NOT found!")
+# print("==================")
+
+# # Debug for deployment
+# print("=== NORTHFLANK DEBUG ===")
+# print("Working directory:", os.getcwd())
+# print("Python path:", sys.path)
+# print("Listing current directory:", os.listdir('.'))
+# print("=======================")

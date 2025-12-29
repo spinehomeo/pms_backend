@@ -4,14 +4,14 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jwt.exceptions import JWTDecodeError
 from pydantic import ValidationError
 from sqlmodel import Session
 
 from core import security
 from core.config import settings
 from core.db import engine
-from models.models import TokenPayload, User
+from models.login import TokenPayload
+from models.user import User
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
