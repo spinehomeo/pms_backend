@@ -28,7 +28,7 @@ app = FastAPI(
 if settings.all_cors_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.all_cors_origins,
+        # allow_origins=settings.all_cors_origins,
         allow_origins=[
         "https://pms-frontend-ten.vercel.app",
         "http://localhost:5173",
