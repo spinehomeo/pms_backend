@@ -1,4 +1,14 @@
-from models.user import User
-from models.items import Item
-# from models.login import Login
+from sqlmodel import SQLModel
+
+# Import model classes so their table metadata is registered with SQLModel.metadata
+from models.users_model import User
+from models.prescriptions_model import Prescription, PrescriptionMedicine
+from models.patients_model import Patient
+from models.medicines_model import MedicineMaster, DoctorMedicineStock, MedicineUsageLog
+from models.followups_model import FollowUp
+from models.cases_model import PatientCase
+from models.appointments_model import Appointment
+
+# # Alembic / SQLModel target metadata
+# target_metadata = SQLModel.metadata
 

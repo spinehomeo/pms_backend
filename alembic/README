@@ -1,1 +1,12 @@
 Generic single-database configuration.
+
+#alembic revision --autogenerate -m "initial schema"
+#uv run alembic upgrade head
+
+# For deleting Enums
+#DROP TYPE IF EXISTS userrole CASCADE;
+#DROP TYPE IF EXISTS medicineform CASCADE;
+#DROP TYPE IF EXISTS potencyscale CASCADE;
+#DROP TYPE IF EXISTS patientgender CASCADE;
+#DROP TYPE IF EXISTS appointmentstatus CASCADE;
+#DROP TYPE IF EXISTS prescriptiontype CASCADE;

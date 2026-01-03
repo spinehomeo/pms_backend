@@ -2,6 +2,11 @@ import sentry_sdk
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.extension import _rate_limit_exceeded_handler
 
 from api.router import api_router
 from core.config import settings
@@ -24,6 +29,12 @@ app = FastAPI(
     generate_unique_id_function=custom_generate_unique_id,
 )
 
+# Register slowapi limiter (optional, requires slowapi installed)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Set all CORS enabled origins
 if settings.all_cors_origins:
     app.add_middleware(
@@ -32,6 +43,8 @@ if settings.all_cors_origins:
         allow_origins=[
         "https://pms-frontend-ten.vercel.app",
         "http://localhost:5173",
+        "http://localhost:8080",
+        "https://475ce336-56fd-48e9-ac15-b78dbe63fed9.lovableproject.com",
     ],
         allow_credentials=True,
         allow_methods=["*"],

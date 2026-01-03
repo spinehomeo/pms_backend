@@ -1,0 +1,428 @@
+# api/routes/followups.py
+import uuid
+from typing import Any, List, Optional
+from datetime import date, datetime, timedelta
+
+from fastapi import APIRouter, HTTPException, Query
+from sqlmodel import func, select
+
+from api.deps import CurrentUser, SessionDep
+from models.followups_model import (
+    FollowUp, FollowUpCreate, FollowUpUpdate, FollowUpPublic, FollowUpsPublic,
+)
+from models.patients_model import Patient
+from models.prescriptions_model import Prescription
+from models.cases_model import PatientCase
+from models.login_model import Message
+
+router = APIRouter(prefix="/followups", tags=["followups"])
+
+
+@router.get("/", response_model=FollowUpsPublic)
+def read_followups(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = 0,
+    limit: int = 100,
+    case_id: Optional[uuid.UUID] = None,
+    patient_id: Optional[uuid.UUID] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    upcoming: bool = False
+) -> Any:
+    """
+    Retrieve follow-ups with filtering options.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access follow-ups")
+    
+    # Base query
+    count_statement = (
+        select(func.count())
+        .select_from(FollowUp)
+        .where(FollowUp.doctor_id == current_user.id)
+    )
+    
+    statement = (
+        select(FollowUp)
+        .where(FollowUp.doctor_id == current_user.id)
+        .order_by(FollowUp.follow_up_date.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    
+    # Apply filters
+    if case_id:
+        # Verify case belongs to doctor
+        case = session.get(PatientCase, case_id)
+        if not case or case.doctor_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Case not found")
+        
+        count_statement = count_statement.where(FollowUp.case_id == case_id)
+        statement = statement.where(FollowUp.case_id == case_id)
+    
+    if patient_id:
+        # Verify patient belongs to doctor
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.doctor_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        
+        # Get cases for this patient
+        patient_cases = session.exec(
+            select(PatientCase.id).where(PatientCase.patient_id == patient_id)
+        ).all()
+        
+        if patient_cases:
+            count_statement = count_statement.where(FollowUp.case_id.in_(patient_cases))
+            statement = statement.where(FollowUp.case_id.in_(patient_cases))
+    
+    if from_date:
+        count_statement = count_statement.where(FollowUp.follow_up_date >= from_date)
+        statement = statement.where(FollowUp.follow_up_date >= from_date)
+    
+    if to_date:
+        count_statement = count_statement.where(FollowUp.follow_up_date <= to_date)
+        statement = statement.where(FollowUp.follow_up_date <= to_date)
+    
+    if upcoming:
+        today = date.today()
+        future_date = today.replace(day=today.day + 30)  # Next 30 days
+        
+        count_statement = count_statement.where(
+            FollowUp.next_follow_up_date >= today
+        ).where(
+            FollowUp.next_follow_up_date <= future_date
+        )
+        statement = statement.where(
+            FollowUp.next_follow_up_date >= today
+        ).where(
+            FollowUp.next_follow_up_date <= future_date
+        ).order_by(FollowUp.next_follow_up_date.asc())
+    
+    count = session.exec(count_statement).one()
+    followups = session.exec(statement).all()
+    
+    return FollowUpsPublic(data=followups, count=count)
+
+
+@router.get("/{followup_id}", response_model=FollowUpPublic)
+def read_followup(
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_id: uuid.UUID
+) -> Any:
+    """
+    Get follow-up by ID.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access follow-ups")
+    
+    followup = session.get(FollowUp, followup_id)
+    if not followup:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    
+    if followup.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this follow-up")
+    
+    return followup
+
+
+@router.post("/", response_model=FollowUpPublic)
+def create_followup(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_in: FollowUpCreate
+) -> Any:
+    """
+    Create new follow-up.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can create follow-ups")
+    
+    # Verify case belongs to doctor
+    case = session.get(PatientCase, followup_in.case_id)
+    if not case or case.doctor_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    # Verify prescription belongs to doctor and case
+    prescription = session.get(Prescription, followup_in.prescription_id)
+    if not prescription or prescription.doctor_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    
+    if prescription.case_id != followup_in.case_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Prescription does not belong to the specified case"
+        )
+    
+    # Calculate interval from last follow-up or prescription date
+    last_followup = session.exec(
+        select(FollowUp)
+        .where(FollowUp.case_id == followup_in.case_id)
+        .order_by(FollowUp.follow_up_date.desc())
+    ).first()
+    
+    if last_followup:
+        interval_days = (date.today() - last_followup.follow_up_date).days
+    else:
+        interval_days = (date.today() - prescription.prescription_date).days
+    
+    # Calculate next follow-up date (default: 30 days from now)
+    next_follow_up = followup_in.next_follow_up_date or (
+        date.today() + timedelta(days=30)
+    )
+    
+    followup_data = followup_in.model_dump()
+    followup_data.update({
+        "doctor_id": current_user.id,
+        "interval_days": max(interval_days, 7),  # Minimum 7 days
+        "next_follow_up_date": next_follow_up
+    })
+    
+    followup = FollowUp.model_validate(followup_data)
+    session.add(followup)
+    session.commit()
+    session.refresh(followup)
+    
+    # Update patient's last visit date
+    patient = session.get(Patient, case.patient_id)
+    if patient:
+        patient.last_visit_date = followup.follow_up_date
+        session.add(patient)
+        session.commit()
+    
+    return followup
+
+
+@router.put("/{followup_id}", response_model=FollowUpPublic)
+def update_followup(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_id: uuid.UUID,
+    followup_in: FollowUpUpdate
+) -> Any:
+    """
+    Update a follow-up.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can update follow-ups")
+    
+    followup = session.get(FollowUp, followup_id)
+    if not followup:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    
+    if followup.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this follow-up")
+    
+    # Verify case and prescription if being updated
+    if followup_in.case_id and followup_in.case_id != followup.case_id:
+        case = session.get(PatientCase, followup_in.case_id)
+        if not case or case.doctor_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Case not found")
+    
+    if followup_in.prescription_id and followup_in.prescription_id != followup.prescription_id:
+        prescription = session.get(Prescription, followup_in.prescription_id)
+        if not prescription or prescription.doctor_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Prescription not found")
+    
+    update_dict = followup_in.model_dump(exclude_unset=True)
+    followup.sqlmodel_update(update_dict)
+    session.add(followup)
+    session.commit()
+    session.refresh(followup)
+    return followup
+
+
+@router.delete("/{followup_id}")
+def delete_followup(
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_id: uuid.UUID
+) -> Message:
+    """
+    Delete a follow-up.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can delete follow-ups")
+    
+    followup = session.get(FollowUp, followup_id)
+    if not followup:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    
+    if followup.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this follow-up")
+    
+    session.delete(followup)
+    session.commit()
+    return Message(message="Follow-up deleted successfully")
+
+
+@router.get("/case/{case_id}")
+def get_case_followups(
+    session: SessionDep,
+    current_user: CurrentUser,
+    case_id: uuid.UUID
+) -> Any:
+    """
+    Get all follow-ups for a case.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access follow-ups")
+    
+    # Verify case belongs to doctor
+    case = session.get(PatientCase, case_id)
+    if not case or case.doctor_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    followups = session.exec(
+        select(FollowUp)
+        .where(FollowUp.case_id == case_id)
+        .order_by(FollowUp.follow_up_date.asc())
+    ).all()
+    
+    # Calculate follow-up timeline
+    timeline = []
+    for i, followup in enumerate(followups):
+        timeline_item = {
+            "followup": followup,
+            "position": i + 1,
+            "total": len(followups)
+        }
+        
+        # Calculate days between follow-ups
+        if i > 0:
+            prev_followup = followups[i - 1]
+            days_between = (followup.follow_up_date - prev_followup.follow_up_date).days
+            timeline_item["days_since_previous"] = days_between
+        
+        timeline.append(timeline_item)
+    
+    return {
+        "case": case,
+        "followups": followups,
+        "timeline": timeline,
+        "total_followups": len(followups),
+        "first_followup": followups[0] if followups else None,
+        "latest_followup": followups[-1] if followups else None
+    }
+
+
+@router.get("/upcoming/due")
+def get_due_followups(
+    session: SessionDep,
+    current_user: CurrentUser
+) -> Any:
+    """
+    Get follow-ups that are due or overdue.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access follow-ups")
+    
+    today = date.today()
+    
+    # Find cases with next_follow_up_date <= today
+    due_followups = session.exec(
+        select(FollowUp)
+        .where(
+            FollowUp.doctor_id == current_user.id,
+            FollowUp.next_follow_up_date <= today
+        )
+        .order_by(FollowUp.next_follow_up_date.asc())
+    ).all()
+    
+    # Group by overdue status
+    overdue = []
+    due_today = []
+    upcoming = []
+    
+    for followup in due_followups:
+        days_overdue = (today - followup.next_follow_up_date).days
+        
+        if days_overdue > 0:
+            overdue.append({
+                "followup": followup,
+                "days_overdue": days_overdue
+            })
+        elif days_overdue == 0:
+            due_today.append(followup)
+    
+    # Find upcoming follow-ups (next 7 days)
+    next_week = today + timedelta(days=7)
+    upcoming_followups = session.exec(
+        select(FollowUp)
+        .where(
+            FollowUp.doctor_id == current_user.id,
+            FollowUp.next_follow_up_date > today,
+            FollowUp.next_follow_up_date <= next_week
+        )
+        .order_by(FollowUp.next_follow_up_date.asc())
+    ).all()
+    
+    for followup in upcoming_followups:
+        days_until = (followup.next_follow_up_date - today).days
+        upcoming.append({
+            "followup": followup,
+            "days_until": days_until
+        })
+    
+    return {
+        "overdue": {
+            "count": len(overdue),
+            "items": overdue
+        },
+        "due_today": {
+            "count": len(due_today),
+            "items": due_today
+        },
+        "upcoming_week": {
+            "count": len(upcoming),
+            "items": upcoming
+        },
+        "total_due": len(due_followups),
+        "check_date": today.isoformat()
+    }
+
+
+@router.post("/{followup_id}/schedule-next")
+def schedule_next_followup(
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_id: uuid.UUID,
+    next_date: date
+) -> Any:
+    """
+    Schedule next follow-up based on current follow-up.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can schedule follow-ups")
+    
+    followup = session.get(FollowUp, followup_id)
+    if not followup or followup.doctor_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    
+    # Create new follow-up record
+    new_followup_data = {
+        "case_id": followup.case_id,
+        "prescription_id": followup.prescription_id,
+        "doctor_id": current_user.id,
+        "follow_up_date": next_date,
+        "interval_days": (next_date - followup.follow_up_date).days
+    }
+    
+    new_followup = FollowUp.model_validate(new_followup_data)
+    session.add(new_followup)
+    
+    # Update current followup's next_follow_up_date
+    followup.next_follow_up_date = next_date
+    session.add(followup)
+    
+    session.commit()
+    session.refresh(new_followup)
+    
+    return {
+        "message": "Next follow-up scheduled successfully",
+        "current_followup": followup,
+        "scheduled_followup": new_followup
+    }

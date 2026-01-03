@@ -7,8 +7,8 @@ from lmodel import Session, delete
 from core.config import settings
 from core.db import engine, init_db
 from main import app
-from models.items import Item
-from models.user import User
+from models.items_model import Item
+from models.users_model import User
 from tils.user import authentication_token_from_email
 from tils.utils import get_superuser_token_headers
 
