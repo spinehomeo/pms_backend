@@ -47,6 +47,11 @@ class User(UserBase, table=True):
     appointments: List["Appointment"] = Relationship(back_populates="doctor")
     medicine_stock: List["DoctorMedicineStock"] = Relationship(back_populates="doctor")
     follow_ups: List["FollowUp"] = Relationship(back_populates="doctor")
+    
+    @property
+    def is_doctor(self) -> bool:
+        """Check if user is a doctor"""
+        return self.role == UserRole.DOCTOR
 
 
 
