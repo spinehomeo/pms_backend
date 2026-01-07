@@ -27,7 +27,7 @@ class UserBase(SQLModel):
     clinic_address: Optional[str] = Field(default=None)
     consultation_fee: Optional[float] = Field(default=None, ge=0)
     is_active: bool = Field(default=True)
-    is_verified: bool = Field(default=False)
+    is_verified: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
     join_date: date = Field(default_factory=date.today)
     last_login: Optional[date] = Field(default=None)
