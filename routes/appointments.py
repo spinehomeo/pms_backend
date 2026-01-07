@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Path
-from sqlmodel import func, select, and_, or_
+from sqlmodel import func, select, and_, or_, text
 
 from api.deps import CurrentUser, SessionDep
 from models.appointments_model import (
@@ -219,8 +219,14 @@ def create_appointment(
         raise HTTPException(status_code=404, detail="Patient not found")
     
     # Check for scheduling conflicts
+    # Strip timezone info to match TIME WITHOUT TIME ZONE column
+    appointment_time = (
+        appointment_in.appointment_time.replace(tzinfo=None) 
+        if appointment_in.appointment_time.tzinfo else 
+        appointment_in.appointment_time
+    )
     appointment_end_time = (
-        datetime.combine(date.today(), appointment_in.appointment_time) + 
+        datetime.combine(date.today(), appointment_time) + 
         timedelta(minutes=appointment_in.duration_minutes)
     ).time()
     
@@ -236,15 +242,15 @@ def create_appointment(
                 or_(
                     # New appointment starts during existing appointment
                     and_(
-                        appointment_in.appointment_time >= Appointment.appointment_time,
-                        appointment_in.appointment_time < func.time_add(
-                            Appointment.appointment_time,
-                            Appointment.duration_minutes * 60
+                        appointment_time >= Appointment.appointment_time,
+                        appointment_time < (
+                            Appointment.appointment_time +
+                            (Appointment.duration_minutes * text("INTERVAL '1 minute'"))
                         )
                     ),
                     # Existing appointment starts during new appointment
                     and_(
-                        Appointment.appointment_time >= appointment_in.appointment_time,
+                        Appointment.appointment_time >= appointment_time,
                         Appointment.appointment_time < appointment_end_time
                     )
                 )
@@ -304,7 +310,13 @@ def update_appointment(
         appointment_in.duration_minutes):
         
         check_date = appointment_in.appointment_date or appointment.appointment_date
-        check_time = appointment_in.appointment_time or appointment.appointment_time
+        check_time_raw = appointment_in.appointment_time or appointment.appointment_time
+        # Strip timezone info to match TIME WITHOUT TIME ZONE column
+        check_time = (
+            check_time_raw.replace(tzinfo=None) 
+            if hasattr(check_time_raw, 'tzinfo') and check_time_raw.tzinfo else 
+            check_time_raw
+        )
         check_duration = appointment_in.duration_minutes or appointment.duration_minutes
         
         check_end_time = (
@@ -325,9 +337,9 @@ def update_appointment(
                     or_(
                         and_(
                             check_time >= Appointment.appointment_time,
-                            check_time < func.time_add(
-                                Appointment.appointment_time,
-                                Appointment.duration_minutes * 60
+                            check_time < (
+                                Appointment.appointment_time +
+                                (Appointment.duration_minutes * text("INTERVAL '1 minute'"))
                             )
                         ),
                         and_(
