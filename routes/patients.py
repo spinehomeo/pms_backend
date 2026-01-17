@@ -8,7 +8,7 @@ from sqlmodel import func, select
 from api.deps import CurrentUser, SessionDep
 from models.patients_model import (
     Patient, PatientCreate, PatientUpdate, PatientPublic, PatientsPublic,
-    PatientGender,
+    PatientGender,  # Add this import
 )
 from models.appointments_model import Appointment
 from models.cases_model import PatientCase
@@ -23,7 +23,9 @@ def read_patients(
     current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
-    search: Optional[str] = Query(None, min_length=1, max_length=100)
+    search: Optional[str] = Query(None, min_length=1, max_length=100),
+    payment_status: Optional[bool] = Query(None),  # NEW: Filter by payment status
+    gender: Optional[PatientGender] = Query(None),  # NEW: Filter by gender
 ) -> Any:
     """
     Retrieve patients with optional search.
@@ -52,13 +54,27 @@ def read_patients(
         count_statement = count_statement.where(
             Patient.full_name.ilike(search_filter) |
             Patient.phone.ilike(search_filter) |
-            Patient.email.ilike(search_filter)
+            Patient.email.ilike(search_filter) |
+            Patient.cnic.ilike(search_filter) |  # NEW: Search by CNIC
+            Patient.city.ilike(search_filter)    # NEW: Search by city
         )
         statement = statement.where(
             Patient.full_name.ilike(search_filter) |
             Patient.phone.ilike(search_filter) |
-            Patient.email.ilike(search_filter)
+            Patient.email.ilike(search_filter) |
+            Patient.cnic.ilike(search_filter) |  # NEW: Search by CNIC
+            Patient.city.ilike(search_filter)    # NEW: Search by city
         )
+    
+    # NEW: Filter by payment status
+    if payment_status is not None:
+        count_statement = count_statement.where(Patient.payment_status == payment_status)
+        statement = statement.where(Patient.payment_status == payment_status)
+    
+    # NEW: Filter by gender
+    if gender:
+        count_statement = count_statement.where(Patient.gender == gender)
+        statement = statement.where(Patient.gender == gender)
     
     count = session.exec(count_statement).one()
     patients = session.exec(statement).all()
@@ -104,17 +120,30 @@ def create_patient(
     
     # Check if patient with same email already exists for this doctor
     if patient_in.email:
-        existing = session.exec(
+        existing_email = session.exec(
             select(Patient).where(
                 Patient.doctor_id == current_user.id,
                 Patient.email == patient_in.email
             )
         ).first()
-        if existing:
+        if existing_email:
             raise HTTPException(
                 status_code=400,
                 detail="Patient with this email already exists"
             )
+    
+    # NEW: Check if patient with same CNIC already exists for this doctor
+    existing_cnic = session.exec(
+        select(Patient).where(
+            Patient.doctor_id == current_user.id,
+            Patient.cnic == patient_in.cnic
+        )
+    ).first()
+    if existing_cnic:
+        raise HTTPException(
+            status_code=400,
+            detail="Patient with this CNIC already exists"
+        )
     
     patient = Patient.model_validate(
         patient_in,
@@ -149,17 +178,32 @@ def update_patient(
     
     # Check email uniqueness if being updated
     if patient_in.email and patient_in.email != patient.email:
-        existing = session.exec(
+        existing_email = session.exec(
             select(Patient).where(
                 Patient.doctor_id == current_user.id,
                 Patient.email == patient_in.email,
                 Patient.id != patient_id
             )
         ).first()
-        if existing:
+        if existing_email:
             raise HTTPException(
                 status_code=400,
                 detail="Another patient with this email already exists"
+            )
+    
+    # NEW: Check CNIC uniqueness if being updated
+    if patient_in.cnic and patient_in.cnic != patient.cnic:
+        existing_cnic = session.exec(
+            select(Patient).where(
+                Patient.doctor_id == current_user.id,
+                Patient.cnic == patient_in.cnic,
+                Patient.id != patient_id
+            )
+        ).first()
+        if existing_cnic:
+            raise HTTPException(
+                status_code=400,
+                detail="Another patient with this CNIC already exists"
             )
     
     update_dict = patient_in.model_dump(exclude_unset=True)
@@ -237,5 +281,8 @@ def get_patient_stats(
         "total_cases": cases_count,
         "total_appointments": appointments_count,
         "last_visit_date": last_appointment,
-        "age": patient.age
+        "age": patient.age,
+        "payment_status": patient.payment_status,  # NEW: Include payment status in stats
+        "gender": patient.gender,                  # NEW: Include gender in stats
+        "city": patient.city                       # NEW: Include city in stats
     }

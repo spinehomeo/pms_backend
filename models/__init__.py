@@ -9,6 +9,7 @@ from .prescriptions_model import PrescriptionBase, PrescriptionType
 from .medicines_model import MedicineMasterBase, DoctorMedicineStockBase, MedicineForm, PotencyScale
 from .appointments_model import AppointmentBase, AppointmentStatus
 from .followups_model import FollowUpBase
+from .doctor_availability_model import DoctorAvailabilityBase, DayOfWeek
 
 # Then import the table .(in dependency order)
 from .users_model import User
@@ -18,6 +19,7 @@ from .medicines_model import MedicineMaster, DoctorMedicineStock
 from .prescriptions_model import Prescription, PrescriptionMedicine
 from .appointments_model import Appointment
 from .followups_model import FollowUp
+from .doctor_availability_model import DoctorAvailability
 
 __all__ = [
     # Base models
@@ -25,9 +27,10 @@ __all__ = [
     "PrescriptionBase", "PrescriptionType", "MedicineMasterBase", 
     "DoctorMedicineStockBase", "MedicineForm", "PotencyScale",
     "AppointmentBase", "AppointmentStatus", "FollowUpBase",
+    "DoctorAvailabilityBase", "DayOfWeek",
     
     # Table models
     "User", "Patient", "PatientCase", "MedicineMaster", 
     "DoctorMedicineStock", "Prescription", "PrescriptionMedicine",
-    "Appointment", "FollowUp",
+    "Appointment", "FollowUp", "DoctorAvailability",
 ]
