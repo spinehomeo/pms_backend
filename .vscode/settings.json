@@ -5,8 +5,10 @@
         "cnic",
         "dayofweek",
         "ilike",
+        "pkey",
         "psql",
         "slowapi",
+        "sqltypes",
         "VARCHAR"
     ]
 }

@@ -1,0 +1,24 @@
+6️⃣ Correct workflow going forward (this WILL work)
+
+From now on, do this every single time:
+
+1️⃣ Change models
+cnic: str | None
+
+2️⃣ Generate migration
+uv run alembic revision --autogenerate -m "add cnic to patient"
+
+3️⃣ Inspect migration
+
+You should see:
+
+op.add_column('patient', sa.Column('cnic', sa.String(length=15)))
+
+4️⃣ Apply migration
+uv run alembic upgrade head
+
+5️⃣ Verify
+uv run alembic current
+
+6️⃣ One-command FULL HEALTH CHECK
+uv run alembic revision --autogenerate -m "pre-deploy schema check"
