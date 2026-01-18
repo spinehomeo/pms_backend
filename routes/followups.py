@@ -102,7 +102,17 @@ def read_followups(
     count = session.exec(count_statement).one()
     followups = session.exec(statement).all()
     
-    return FollowUpsPublic(data=followups, count=count)
+    # Populate patient and case details
+    response_followups = []
+    for followup in followups:
+        followup_dict = {
+            **followup.__dict__,
+            "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+            "case_number": followup.case.case_number if followup.case else None
+        }
+        response_followups.append(FollowUpPublic(**followup_dict))
+    
+    return FollowUpsPublic(data=response_followups, count=count)
 
 
 @router.get("/{followup_id}", response_model=FollowUpPublic)
@@ -124,7 +134,12 @@ def read_followup(
     if followup.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this follow-up")
     
-    return followup
+    followup_dict = {
+        **followup.__dict__,
+        "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+        "case_number": followup.case.case_number if followup.case else None
+    }
+    return FollowUpPublic(**followup_dict)
 
 
 @router.post("/", response_model=FollowUpPublic)
@@ -192,7 +207,12 @@ def create_followup(
         session.add(patient)
         session.commit()
     
-    return followup
+    followup_dict = {
+        **followup.__dict__,
+        "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+        "case_number": followup.case.case_number if followup.case else None
+    }
+    return FollowUpPublic(**followup_dict)
 
 
 @router.put("/{followup_id}", response_model=FollowUpPublic)
@@ -232,7 +252,13 @@ def update_followup(
     session.add(followup)
     session.commit()
     session.refresh(followup)
-    return followup
+    
+    followup_dict = {
+        **followup.__dict__,
+        "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+        "case_number": followup.case.case_number if followup.case else None
+    }
+    return FollowUpPublic(**followup_dict)
 
 
 @router.delete("/{followup_id}")
@@ -282,18 +308,28 @@ def get_case_followups(
         .order_by(FollowUp.follow_up_date.asc())
     ).all()
     
+    # Populate patient details for followups
+    response_followups = []
+    for followup in followups:
+        followup_dict = {
+            **followup.__dict__,
+            "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+            "case_number": followup.case.case_number if followup.case else None
+        }
+        response_followups.append(FollowUpPublic(**followup_dict))
+    
     # Calculate follow-up timeline
     timeline = []
-    for i, followup in enumerate(followups):
+    for i, followup in enumerate(response_followups):
         timeline_item = {
             "followup": followup,
             "position": i + 1,
-            "total": len(followups)
+            "total": len(response_followups)
         }
         
         # Calculate days between follow-ups
         if i > 0:
-            prev_followup = followups[i - 1]
+            prev_followup = response_followups[i - 1]
             days_between = (followup.follow_up_date - prev_followup.follow_up_date).days
             timeline_item["days_since_previous"] = days_between
         
@@ -301,11 +337,11 @@ def get_case_followups(
     
     return {
         "case": case,
-        "followups": followups,
+        "followups": response_followups,
         "timeline": timeline,
-        "total_followups": len(followups),
-        "first_followup": followups[0] if followups else None,
-        "latest_followup": followups[-1] if followups else None
+        "total_followups": len(response_followups),
+        "first_followup": response_followups[0] if response_followups else None,
+        "latest_followup": response_followups[-1] if response_followups else None
     }
 
 
@@ -338,15 +374,22 @@ def get_due_followups(
     upcoming = []
     
     for followup in due_followups:
+        followup_dict = {
+            **followup.__dict__,
+            "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+            "case_number": followup.case.case_number if followup.case else None
+        }
+        followup_public = FollowUpPublic(**followup_dict)
+        
         days_overdue = (today - followup.next_follow_up_date).days
         
         if days_overdue > 0:
             overdue.append({
-                "followup": followup,
+                "followup": followup_public,
                 "days_overdue": days_overdue
             })
         elif days_overdue == 0:
-            due_today.append(followup)
+            due_today.append(followup_public)
     
     # Find upcoming follow-ups (next 7 days)
     next_week = today + timedelta(days=7)
@@ -361,9 +404,16 @@ def get_due_followups(
     ).all()
     
     for followup in upcoming_followups:
+        followup_dict = {
+            **followup.__dict__,
+            "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+            "case_number": followup.case.case_number if followup.case else None
+        }
+        followup_public = FollowUpPublic(**followup_dict)
+        
         days_until = (followup.next_follow_up_date - today).days
         upcoming.append({
-            "followup": followup,
+            "followup": followup_public,
             "days_until": days_until
         })
     
@@ -420,9 +470,25 @@ def schedule_next_followup(
     
     session.commit()
     session.refresh(new_followup)
+    session.refresh(followup)
+    
+    # Populate patient details
+    followup_dict = {
+        **followup.__dict__,
+        "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+        "case_number": followup.case.case_number if followup.case else None
+    }
+    followup_public = FollowUpPublic(**followup_dict)
+    
+    new_followup_dict = {
+        **new_followup.__dict__,
+        "patient_name": new_followup.case.patient.full_name if new_followup.case and new_followup.case.patient else None,
+        "case_number": new_followup.case.case_number if new_followup.case else None
+    }
+    new_followup_public = FollowUpPublic(**new_followup_dict)
     
     return {
         "message": "Next follow-up scheduled successfully",
-        "current_followup": followup,
-        "scheduled_followup": new_followup
+        "current_followup": followup_public,
+        "scheduled_followup": new_followup_public
     }

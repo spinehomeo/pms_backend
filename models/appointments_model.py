@@ -54,6 +54,7 @@ class Appointment(AppointmentBase, table=True):
     # Relationships
     patient: "Patient" = Relationship(back_populates="appointments")
     doctor: "User" = Relationship(back_populates="appointments")
+    case: Optional["PatientCase"] = Relationship(back_populates="appointment")
 
 
 # ========== REQUEST MODELS (API Input) ==========
@@ -101,7 +102,8 @@ class UpcomingAppointmentsResponse(SQLModel):
 class AvailabilityResponse(SQLModel):
     """API OUTPUT MODEL for availability check"""
     date: str
-    working_hours: dict
+    day_of_week: str
+    availability_slots: List[dict]
     booked_slots: List[dict]
     available_slots: List[dict]
     total_available: int

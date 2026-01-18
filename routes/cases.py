@@ -11,6 +11,7 @@ from models.cases_model import (
     PatientCase, PatientCaseCreate, PatientCasePublic, CasesPublic,
 )
 from models.patients_model import Patient
+from models.appointments_model import Appointment
 from models.prescriptions_model import Prescription
 from models.login_model import Message
 
@@ -43,6 +44,7 @@ def read_cases(
     statement = (
         select(PatientCase)
         .where(PatientCase.doctor_id == current_user.id)
+        .order_by(PatientCase.case_date.desc())
         .offset(skip)
         .limit(limit)
     )
@@ -68,7 +70,16 @@ def read_cases(
     count = session.exec(count_statement).one()
     cases = session.exec(statement).all()
     
-    return CasesPublic(data=cases, count=count)
+    # Populate patient names
+    response_cases = []
+    for case in cases:
+        case_dict = {
+            **case.__dict__,
+            "patient_name": case.patient.full_name if case.patient else None
+        }
+        response_cases.append(PatientCasePublic(**case_dict))
+    
+    return CasesPublic(data=response_cases, count=count)
 
 
 @router.get("/{case_id}", response_model=PatientCasePublic)
@@ -90,7 +101,11 @@ def read_case(
     if case.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this case")
     
-    return case
+    case_dict = {
+        **case.__dict__,
+        "patient_name": case.patient.full_name if case.patient else None
+    }
+    return PatientCasePublic(**case_dict)
 
 
 @router.post("/", response_model=PatientCasePublic)
@@ -110,6 +125,14 @@ def create_case(
     patient = session.get(Patient, case_in.patient_id)
     if not patient or patient.doctor_id != current_user.id:
         raise HTTPException(status_code=404, detail="Patient not found")
+    
+    # If appointment_id provided, validate it belongs to this doctor and patient
+    if case_in.appointment_id:
+        appointment = session.get(Appointment, case_in.appointment_id)
+        if not appointment or appointment.doctor_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        if appointment.patient_id != case_in.patient_id:
+            raise HTTPException(status_code=400, detail="Appointment does not belong to this patient")
     
     # Generate case number
     today = date.today()
@@ -144,7 +167,11 @@ def create_case(
     session.add(patient)
     session.commit()
     
-    return case
+    case_dict = {
+        **case.__dict__,
+        "patient_name": case.patient.full_name if case.patient else None
+    }
+    return PatientCasePublic(**case_dict)
 
 
 @router.put("/{case_id}", response_model=PatientCasePublic)
@@ -179,7 +206,12 @@ def update_case(
     session.add(case)
     session.commit()
     session.refresh(case)
-    return case
+    
+    case_dict = {
+        **case.__dict__,
+        "patient_name": case.patient.full_name if case.patient else None
+    }
+    return PatientCasePublic(**case_dict)
 
 
 @router.delete("/{case_id}")

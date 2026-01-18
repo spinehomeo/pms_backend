@@ -38,12 +38,18 @@ class PatientCase(PatientCaseBase, table=True):
         nullable=False,
         index=True
     )
+    appointment_id: Optional[uuid.UUID] = Field(
+        foreign_key="appointment.id",
+        nullable=True,
+        index=True
+    )
     case_date: date = Field(default_factory=date.today)
     case_number: str = Field(max_length=50, unique=True, index=True)
     
     # Relationships
     patient: "Patient" = Relationship(back_populates="cases")
     doctor: "User" = Relationship(back_populates="cases")
+    appointment: Optional["Appointment"] = Relationship(back_populates="case")
     prescription: Optional["Prescription"] = Relationship(back_populates="case")
     follow_ups: List["FollowUp"] = Relationship(back_populates="case")
 
@@ -52,6 +58,7 @@ class PatientCase(PatientCaseBase, table=True):
 class PatientCaseCreate(PatientCaseBase):
     """API INPUT MODEL for creating cases"""
     patient_id: uuid.UUID
+    appointment_id: Optional[uuid.UUID] = None
 
 
 class PatientCaseUpdate(SQLModel):
@@ -77,6 +84,7 @@ class PatientCasePublic(PatientCaseBase):
     id: uuid.UUID
     patient_id: uuid.UUID
     doctor_id: uuid.UUID
+    appointment_id: Optional[uuid.UUID] = None
     case_date: date
     case_number: str
     patient_name: Optional[str] = None  # Will be populated from relationship

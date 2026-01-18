@@ -12,16 +12,94 @@ from models.appointments_model import (
     Appointment, AppointmentCreate, AppointmentUpdate, AppointmentPublic, 
     AppointmentsPublic, AppointmentStatus
 )
+from models.doctor_availability_model import DoctorAvailability, DayOfWeek
 from models.patients_model import Patient
 from models.login_model import Message
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
-# Default doctor working hours (can be moved to settings or Doctor model later)
-DOCTOR_DEFAULT_WORKING_HOURS = {
-    "start": time(9, 0),
-    "end": time(17, 0),
-}
+
+def _get_day_of_week_name(date_obj: date) -> str:
+    """Convert date to day of week name for availability lookup"""
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    return day_names[date_obj.weekday()]
+
+
+def _validate_availability(
+    session: SessionDep,
+    doctor_id: uuid.UUID,
+    appointment_date: date,
+    appointment_time: time,
+    duration_minutes: int,
+    exclude_appointment_id: Optional[uuid.UUID] = None
+) -> bool:
+    """
+    Validate if appointment time falls within doctor's availability slots.
+    Returns True if valid, raises HTTPException if not.
+    """
+    day_name = _get_day_of_week_name(appointment_date)
+    
+    # Get doctor's availability for this day of week
+    availability_slots = session.exec(
+        select(DoctorAvailability).where(
+            and_(
+                DoctorAvailability.doctor_id == doctor_id,
+                DoctorAvailability.day_of_week == day_name,
+                DoctorAvailability.is_available == True
+            )
+        )
+    ).all()
+    
+    if not availability_slots:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Doctor has no available slots on {day_name}s"
+        )
+    
+    # Check if appointment time falls within any availability slot
+    appointment_end = (
+        datetime.combine(date.today(), appointment_time) + 
+        timedelta(minutes=duration_minutes)
+    ).time()
+    
+    for slot in availability_slots:
+        # Check if appointment fits within this slot
+        if appointment_time >= slot.start_time and appointment_end <= slot.end_time:
+            return True
+    
+    # If no matching slot found, show available times
+    available_times = [
+        f"{slot.start_time.strftime('%H:%M')}-{slot.end_time.strftime('%H:%M')}"
+        for slot in availability_slots
+    ]
+    raise HTTPException(
+        status_code=409,
+        detail=f"Appointment time not within doctor's availability. Available: {', '.join(available_times)}"
+    )
+
+
+@router.post("/validate-availability")
+def validate_appointment_availability(
+    session: SessionDep,
+    current_user: CurrentUser,
+    appointment_date: date = Query(...),
+    appointment_time: time = Query(...),
+    duration_minutes: int = Query(30, ge=15)
+) -> Any:
+    """
+    Check if a specific time slot is available for the doctor.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can check availability")
+    
+    try:
+        _validate_availability(
+            session, current_user.id, appointment_date, 
+            appointment_time, duration_minutes
+        )
+        return {"available": True, "message": "Time slot is available"}
+    except HTTPException as e:
+        return {"available": False, "message": e.detail}
 
 @router.get("/", response_model=AppointmentsPublic)
 def read_appointments(
@@ -97,7 +175,17 @@ def read_appointments(
     count = session.exec(count_statement).one()
     appointments = session.exec(statement).all()
     
-    return AppointmentsPublic(data=appointments, count=count)
+    # Populate patient details
+    response_appointments = []
+    for appt in appointments:
+        appt_dict = {
+            **appt.__dict__,
+            "patient_name": appt.patient.full_name if appt.patient else None,
+            "patient_phone": appt.patient.phone if appt.patient else None
+        }
+        response_appointments.append(AppointmentPublic(**appt_dict))
+    
+    return AppointmentsPublic(data=response_appointments, count=count)
 
 
 @router.get("/today", response_model=AppointmentsPublic)
@@ -126,7 +214,17 @@ def read_today_appointments(
     
     appointments = session.exec(statement).all()
     
-    return AppointmentsPublic(data=appointments, count=len(appointments))
+    # Populate patient details
+    response_appointments = []
+    for appt in appointments:
+        appt_dict = {
+            **appt.__dict__,
+            "patient_name": appt.patient.full_name if appt.patient else None,
+            "patient_phone": appt.patient.phone if appt.patient else None
+        }
+        response_appointments.append(AppointmentPublic(**appt_dict))
+    
+    return AppointmentsPublic(data=response_appointments, count=len(response_appointments))
 
 
 @router.get("/upcoming")
@@ -162,16 +260,26 @@ def read_upcoming_appointments(
     
     appointments = session.exec(statement).all()
     
+    # Populate patient details
+    response_appointments = []
+    for appt in appointments:
+        appt_dict = {
+            **appt.__dict__,
+            "patient_name": appt.patient.full_name if appt.patient else None,
+            "patient_phone": appt.patient.phone if appt.patient else None
+        }
+        response_appointments.append(AppointmentPublic(**appt_dict))
+    
     # Group by date
     appointments_by_date = {}
-    for appointment in appointments:
+    for appointment in response_appointments:
         date_str = appointment.appointment_date.isoformat()
         if date_str not in appointments_by_date:
             appointments_by_date[date_str] = []
         appointments_by_date[date_str].append(appointment)
     
     return {
-        "appointments": appointments,
+        "appointments": response_appointments,
         "grouped_by_date": appointments_by_date,
         "from_date": today.isoformat(),
         "to_date": future_date.isoformat()
@@ -197,7 +305,12 @@ def read_appointment(
     if appointment.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this appointment")
     
-    return appointment
+    appt_dict = {
+        **appointment.__dict__,
+        "patient_name": appointment.patient.full_name if appointment.patient else None,
+        "patient_phone": appointment.patient.phone if appointment.patient else None
+    }
+    return AppointmentPublic(**appt_dict)
 
 
 @router.post("/", response_model=AppointmentPublic)
@@ -209,6 +322,7 @@ def create_appointment(
 ) -> Any:
     """
     Create new appointment.
+    Validates against doctor's availability slots and booking conflicts.
     """
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can create appointments")
@@ -217,6 +331,15 @@ def create_appointment(
     patient = session.get(Patient, appointment_in.patient_id)
     if not patient or patient.doctor_id != current_user.id:
         raise HTTPException(status_code=404, detail="Patient not found")
+    
+    # Validate appointment time is within doctor's availability
+    _validate_availability(
+        session,
+        current_user.id,
+        appointment_in.appointment_date,
+        appointment_in.appointment_time,
+        appointment_in.duration_minutes
+    )
     
     # Check for scheduling conflicts
     # Strip timezone info to match TIME WITHOUT TIME ZONE column
@@ -281,7 +404,12 @@ def create_appointment(
     session.add(patient)
     session.commit()
     
-    return appointment
+    appt_dict = {
+        **appointment.__dict__,
+        "patient_name": appointment.patient.full_name if appointment.patient else None,
+        "patient_phone": appointment.patient.phone if appointment.patient else None
+    }
+    return AppointmentPublic(**appt_dict)
 
 
 @router.put("/{appointment_id}", response_model=AppointmentPublic)
@@ -367,7 +495,13 @@ def update_appointment(
     session.add(appointment)
     session.commit()
     session.refresh(appointment)
-    return appointment
+    
+    appt_dict = {
+        **appointment.__dict__,
+        "patient_name": appointment.patient.full_name if appointment.patient else None,
+        "patient_phone": appointment.patient.phone if appointment.patient else None
+    }
+    return AppointmentPublic(**appt_dict)
 
 
 @router.patch("/{appointment_id}/status")
@@ -394,7 +528,13 @@ def update_appointment_status(
     session.add(appointment)
     session.commit()
     session.refresh(appointment)
-    return appointment
+    
+    appt_dict = {
+        **appointment.__dict__,
+        "patient_name": appointment.patient.full_name if appointment.patient else None,
+        "patient_phone": appointment.patient.phone if appointment.patient else None
+    }
+    return AppointmentPublic(**appt_dict)
 
 
 @router.delete("/{appointment_id}")
@@ -428,10 +568,34 @@ def check_availability(
     check_date: date
 ) -> Any:
     """
-    Check available time slots for a specific date.
+    Check available time slots for a specific date based on doctor's availability.
+    Shows 30-minute intervals within booked appointments.
     """
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can check availability")
+    
+    # Get day of week for this date
+    day_name = _get_day_of_week_name(check_date)
+    
+    # Get doctor's availability slots for this day
+    availability_slots = session.exec(
+        select(DoctorAvailability).where(
+            and_(
+                DoctorAvailability.doctor_id == current_user.id,
+                DoctorAvailability.day_of_week == day_name,
+                DoctorAvailability.is_available == True
+            )
+        ).order_by(DoctorAvailability.start_time)
+    ).all()
+    
+    if not availability_slots:
+        return {
+            "date": check_date.isoformat(),
+            "day_of_week": day_name,
+            "available_slots": [],
+            "total_available": 0,
+            "message": "Doctor has no availability on this day"
+        }
     
     # Get appointments for the day
     appointments = session.exec(
@@ -446,12 +610,6 @@ def check_availability(
             )
         ).order_by(Appointment.appointment_time.asc())
     ).all()
-    
-    # Define working hours (use default constant; can be overridden per-doctor later)
-    working_hours = [
-        DOCTOR_DEFAULT_WORKING_HOURS["start"],
-        DOCTOR_DEFAULT_WORKING_HOURS["end"]
-    ]
     
     # Calculate booked slots
     booked_slots = []
@@ -470,35 +628,42 @@ def check_availability(
     
     # Calculate available slots (30-minute intervals)
     available_slots = []
-    current_time = datetime.combine(check_date, working_hours[0])
-    end_time = datetime.combine(check_date, working_hours[1])
-    
-    while current_time + timedelta(minutes=30) <= end_time:
-        slot_start = current_time.time()
-        slot_end = (current_time + timedelta(minutes=30)).time()
+    for slot in availability_slots:
+        current_time = datetime.combine(check_date, slot.start_time)
+        end_time = datetime.combine(check_date, slot.end_time)
         
-        # Check if slot is available
-        slot_available = True
-        for booked in booked_slots:
-            if (slot_start < booked["end"] and slot_end > booked["start"]):
-                slot_available = False
-                break
-        
-        if slot_available:
-            available_slots.append({
-                "start": slot_start.strftime("%H:%M"),
-                "end": slot_end.strftime("%H:%M"),
-                "duration_minutes": 30
-            })
-        
-        current_time += timedelta(minutes=30)
+        while current_time + timedelta(minutes=30) <= end_time:
+            slot_start = current_time.time()
+            slot_end = (current_time + timedelta(minutes=30)).time()
+            
+            # Check if slot is available
+            slot_available = True
+            for booked in booked_slots:
+                if (slot_start < booked["end"] and slot_end > booked["start"]):
+                    slot_available = False
+                    break
+            
+            if slot_available:
+                available_slots.append({
+                    "start": slot_start.strftime("%H:%M"),
+                    "end": slot_end.strftime("%H:%M"),
+                    "duration_minutes": 30
+                })
+            
+            current_time += timedelta(minutes=30)
     
     return {
         "date": check_date.isoformat(),
-        "working_hours": {
-            "start": working_hours[0].strftime("%H:%M"),
-            "end": working_hours[1].strftime("%H:%M")
-        },
+        "day_of_week": day_name,
+        "availability_slots": [
+            {
+                "start": slot.start_time.strftime("%H:%M"),
+                "end": slot.end_time.strftime("%H:%M"),
+                "is_available": slot.is_available,
+                "notes": slot.notes
+            }
+            for slot in availability_slots
+        ],
         "booked_slots": booked_slots,
         "available_slots": available_slots,
         "total_available": len(available_slots)

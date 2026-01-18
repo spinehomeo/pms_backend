@@ -5,6 +5,7 @@
         "cnic",
         "dayofweek",
         "ilike",
+        "mentals",
         "pkey",
         "psql",
         "slowapi",
