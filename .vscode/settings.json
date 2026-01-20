@@ -4,12 +4,14 @@
         "Appts",
         "cnic",
         "dayofweek",
+        "Homoeo",
         "ilike",
         "mentals",
         "pkey",
         "psql",
         "slowapi",
         "sqltypes",
+        "uvicorn",
         "VARCHAR"
     ]
 }
