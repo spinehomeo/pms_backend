@@ -12,7 +12,7 @@ from routes import (
     private,
     reports,
     users,
-    utils,
+    utils_routes,
 )
 from core.config import settings
 
@@ -22,7 +22,7 @@ api_router = APIRouter()
 api_router.include_router(login.router)
 api_router.include_router(users.router)
 api_router.include_router(doctor_availability.router)
-api_router.include_router(utils.router)
+api_router.include_router(utils_routes.router)
 
 # Feature routers
 api_router.include_router(appointments.router)
