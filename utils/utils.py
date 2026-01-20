@@ -6,8 +6,16 @@ from typing import Any
 
 import emails  # type: ignore
 import jwt
-# from jwt import InvalidTokenError
-from jwt.exceptions import InvalidTokenError
+# Import all JWT exceptions for PyJWT >= 2.0.0
+from jwt.exceptions import (
+    InvalidTokenError, 
+    ExpiredSignatureError,
+    DecodeError,
+    InvalidSignatureError,
+    InvalidAudienceError,
+    InvalidIssuerError,
+    MissingRequiredClaimError
+)
 from jinja2 import Template
 
 from core import security
@@ -201,7 +209,7 @@ def verify_password_reset_token(token: str) -> str | None:
         if decoded_token.get("type") != "password_reset":
             return None
         return str(decoded_token["sub"])
-    except (InvalidTokenError, jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+    except (InvalidTokenError, ExpiredSignatureError):
         return None
 
 
@@ -216,7 +224,7 @@ def verify_email_token(token: str) -> str | None:
         if decoded_token.get("type") != "email_verification":
             return None
         return str(decoded_token["sub"])
-    except (InvalidTokenError, jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+    except (InvalidTokenError, ExpiredSignatureError):
         return None
 
 
