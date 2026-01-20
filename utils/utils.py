@@ -6,7 +6,8 @@ from typing import Any
 
 import emails  # type: ignore
 import jwt
-from jwt import PyJWTError
+from jwt.exceptions import ExpiredSignatureError, DecodeError
+
 from jinja2 import Template
 
 from core import security
