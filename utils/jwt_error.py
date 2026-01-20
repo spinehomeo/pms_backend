@@ -1,5 +1,5 @@
-import jwt.exceptions
+import jwt
 print("Available JWT exceptions:")
-for attr in dir(jwt.exceptions):
-    if 'Error' in attr:
+for attr in dir(jwt):
+    if 'Error' in attr or 'Decode' in attr:
         print(f"  - {attr}")
