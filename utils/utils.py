@@ -6,11 +6,10 @@ from typing import Any
 
 import emails  # type: ignore
 import jwt
-# Import all JWT exceptions for PyJWT >= 2.0.0
+# Import JWT exceptions - use DecodeError as base exception for all token errors
 from jwt.exceptions import (
-    InvalidTokenError, 
-    ExpiredSignatureError,
     DecodeError,
+    ExpiredSignatureError,
     InvalidSignatureError,
     InvalidAudienceError,
     InvalidIssuerError,
@@ -209,7 +208,7 @@ def verify_password_reset_token(token: str) -> str | None:
         if decoded_token.get("type") != "password_reset":
             return None
         return str(decoded_token["sub"])
-    except (InvalidTokenError, ExpiredSignatureError):
+    except (DecodeError, ExpiredSignatureError):
         return None
 
 
@@ -224,7 +223,7 @@ def verify_email_token(token: str) -> str | None:
         if decoded_token.get("type") != "email_verification":
             return None
         return str(decoded_token["sub"])
-    except (InvalidTokenError, ExpiredSignatureError):
+    except (DecodeError, ExpiredSignatureError):
         return None
 
 
