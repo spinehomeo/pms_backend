@@ -6,15 +6,7 @@ from typing import Any
 
 import emails  # type: ignore
 import jwt
-# Import JWT exceptions - use DecodeError as base exception for all token errors
-from jwt.exceptions import (
-    DecodeError,
-    ExpiredSignatureError,
-    InvalidSignatureError,
-    InvalidAudienceError,
-    InvalidIssuerError,
-    MissingRequiredClaimError
-)
+from jwt import PyJWTError
 from jinja2 import Template
 
 from core import security
