@@ -1,0 +1,237 @@
+"""
+Public API Routes - endpoints accessible without authentication
+"""
+import uuid
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query
+from sqlmodel import select
+
+from api.deps import SessionDep
+from models.users_model import User, UserRole
+from models.doctor_availability_model import DoctorAvailability
+from models.patients_model import Patient
+from models.appointments_model import Appointment, AppointmentStatus
+from models.public_models import (
+    AvailabilityResponse,
+    AvailableSlot,
+    DoctorPublicInfo,
+    AppointmentBookingResponse,
+    PublicBookingRequest,
+)
+
+router = APIRouter(prefix="/public", tags=["public"])
+
+
+@router.get("/doctors", response_model=list[DoctorPublicInfo])
+def list_doctors_public(
+    session: SessionDep,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+) -> Any:
+    """
+    List all active doctors (public endpoint).
+    
+    Returns minimal doctor information including name, specialization, clinic, and fees.
+    """
+    statement = (
+        select(User)
+        .where(User.role == UserRole.DOCTOR, User.is_active == True)
+        .offset(skip)
+        .limit(limit)
+    )
+    doctors = session.exec(statement).all()
+    
+    return [
+        DoctorPublicInfo(
+            id=str(doctor.id),
+            full_name=doctor.full_name,
+            specialization=doctor.specialization,
+            clinic_name=doctor.clinic_name,
+            consultation_fee=doctor.consultation_fee,
+        )
+        for doctor in doctors
+    ]
+
+
+@router.get("/doctors/{doctor_id}")
+def get_doctor_public(
+    session: SessionDep,
+    doctor_id: str,
+) -> Any:
+    """
+    Get public information about a specific doctor.
+    """
+    try:
+        doctor_uuid = uuid.UUID(doctor_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid doctor ID format")
+    
+    doctor = session.get(User, doctor_uuid)
+    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    
+    return DoctorPublicInfo(
+        id=str(doctor.id),
+        full_name=doctor.full_name,
+        specialization=doctor.specialization,
+        clinic_name=doctor.clinic_name,
+        consultation_fee=doctor.consultation_fee,
+    )
+
+
+@router.get("/availability/{doctor_id}/{check_date}", response_model=AvailabilityResponse)
+def check_availability_public(
+    session: SessionDep,
+    doctor_id: str,
+    check_date: date,
+) -> Any:
+    """
+    Check doctor availability for a specific date (public endpoint).
+    
+    Returns available 30-minute slots for the selected date.
+    """
+    try:
+        doctor_uuid = uuid.UUID(doctor_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid doctor ID format")
+    
+    # Verify doctor exists and is active
+    doctor = session.get(User, doctor_uuid)
+    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    
+    # Get day name (0=Monday, 6=Sunday)
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    day_name = day_names[check_date.weekday()]
+    
+    # Fetch availability slots for this day
+    availability_slots = session.exec(
+        select(DoctorAvailability).where(
+            DoctorAvailability.doctor_id == doctor_uuid,
+            DoctorAvailability.day_of_week == day_name,
+            DoctorAvailability.is_available == True,
+        )
+        .order_by(DoctorAvailability.start_time)
+    ).all()
+    
+    if not availability_slots:
+        return AvailabilityResponse(
+            date=check_date.isoformat(),
+            day_of_week=day_name,
+            available_slots=[],
+            message="No available slots for this date",
+        )
+    
+    # Calculate 30-minute slots from availability windows
+    available_slots = []
+    for slot in availability_slots:
+        current_time = datetime.combine(check_date, slot.start_time)
+        end_time = datetime.combine(check_date, slot.end_time)
+        
+        while current_time + timedelta(minutes=30) <= end_time:
+            slot_start = current_time.time()
+            slot_end = (current_time + timedelta(minutes=30)).time()
+            
+            available_slots.append(
+                AvailableSlot(
+                    start=slot_start.strftime("%H:%M"),
+                    end=slot_end.strftime("%H:%M"),
+                    duration_minutes=30,
+                )
+            )
+            current_time += timedelta(minutes=30)
+    
+    return AvailabilityResponse(
+        date=check_date.isoformat(),
+        day_of_week=day_name,
+        available_slots=available_slots,
+        doctor=DoctorPublicInfo(
+            id=str(doctor.id),
+            full_name=doctor.full_name,
+            specialization=doctor.specialization,
+            clinic_name=doctor.clinic_name,
+            consultation_fee=doctor.consultation_fee,
+        ),
+    )
+
+
+@router.post("/appointments/book", response_model=AppointmentBookingResponse)
+def book_appointment_public(
+    session: SessionDep,
+    booking_data: PublicBookingRequest,
+) -> Any:
+    """
+    Public appointment booking without authentication.
+    
+    Patient must have registered email. Will create patient record if it doesn't exist.
+    """
+    # Validate and parse doctor ID
+    try:
+        doctor_uuid = uuid.UUID(booking_data.doctor_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid doctor ID format")
+    
+    # Verify doctor exists and is active
+    doctor = session.get(User, doctor_uuid)
+    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    
+    # Check if patient user exists (must have registered)
+    patient_user = session.exec(
+        select(User).where(
+            User.email == booking_data.patient_email,
+            User.role == UserRole.PATIENT,
+        )
+    ).first()
+    
+    if not patient_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Patient not registered. Please register first at /patients/register",
+        )
+    
+    # Check if patient record exists for this doctor
+    patient = session.exec(
+        select(Patient).where(
+            Patient.doctor_id == doctor_uuid,
+            Patient.email == booking_data.patient_email,
+        )
+    ).first()
+    
+    # Create patient record if doesn't exist
+    if not patient:
+        patient = Patient(
+            doctor_id=doctor_uuid,
+            full_name=patient_user.full_name,
+            phone=patient_user.phone or "Not provided",
+            cnic="TEMP",  # Placeholder for public bookings
+            gender="other",  # Default gender
+            email=booking_data.patient_email,
+        )
+        session.add(patient)
+        session.commit()
+        session.refresh(patient)
+    
+    # Create appointment
+    appointment = Appointment(
+        doctor_id=doctor_uuid,
+        patient_id=patient.id,
+        appointment_date=booking_data.appointment_date,
+        appointment_time=booking_data.appointment_time,
+        duration_minutes=30,
+        status=AppointmentStatus.SCHEDULED,
+        consultation_type="first",
+        reason=booking_data.reason,
+    )
+    
+    session.add(appointment)
+    session.commit()
+    session.refresh(appointment)
+    
+    return AppointmentBookingResponse(
+        success=True,
+        appointment_id=str(appointment.id),
+        message=f"Appointment booked successfully for {booking_data.appointment_date.isoformat()} at {booking_data.appointment_time.strftime('%H:%M')}",
+    )

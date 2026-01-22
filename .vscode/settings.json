@@ -9,6 +9,7 @@
         "mentals",
         "pkey",
         "psql",
+        "Pydantic",
         "slowapi",
         "sqltypes",
         "uvicorn",

@@ -23,8 +23,10 @@ from models.users_model import (
     UserUpdate,
     UserUpdateMe,
     UpdatePassword,
-    DoctorStats
+    DoctorStats,
+    UserRole,
 )
+from models.public_models import PatientRegisterPublic
 from utils.utils import (
     generate_new_account_email,
     generate_email_verification_email,
@@ -291,6 +293,55 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
             subject=email_data.subject,
             html_content=email_data.html_content,
         )
+    
+    return user
+
+
+@router.post("/patients/register", response_model=UserPublic)
+def register_patient(session: SessionDep, patient_in: PatientRegisterPublic) -> Any:
+    """
+    Public patient registration endpoint.
+    
+    Creates a new patient user account without admin approval.
+    """
+    # Check if user already exists
+    user = crud.get_user_by_email(session=session, email=patient_in.email)
+    if user:
+        raise HTTPException(
+            status_code=400,
+            detail="The user with this email already exists in the system",
+        )
+    
+    # Create user with PATIENT role
+    user_create = UserCreate(
+        email=patient_in.email,
+        password=patient_in.password,
+        full_name=patient_in.full_name,
+        role=UserRole.PATIENT,  # Set as patient
+        phone=patient_in.phone,
+    )
+    
+    user = crud.create_user(session=session, user_create=user_create)
+    
+    # Send verification email
+    if settings.emails_enabled:
+        verification_token = generate_email_verification_token(email=patient_in.email)
+        email_data = generate_email_verification_email(
+            email_to=patient_in.email, email=patient_in.email, token=verification_token
+        )
+        send_email(
+            email_to=patient_in.email,
+            subject=email_data.subject,
+            html_content=email_data.html_content,
+        )
+    
+    # Audit log
+    try:
+        audit = AuditLog(user_id=user.id, action="patient_registration", entity="user", entity_id=user.id)
+        session.add(audit)
+        session.commit()
+    except Exception:
+        session.rollback()
     
     return user
 

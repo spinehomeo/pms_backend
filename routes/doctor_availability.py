@@ -144,68 +144,6 @@ def create_doctor_availability_bulk(
 
 # ========== READ OPERATIONS ==========
 
-@router.get("/", response_model=DoctorAvailabilitiesPublic)
-def get_doctor_availability(
-    session: SessionDep,
-    current_user: CurrentUser,
-    day: Optional[DayOfWeek] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-) -> Any:
-    """
-    Get all availability slots for the current doctor.
-    
-    Optionally filter by day of week.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can view their availability")
-    
-    statement = (
-        select(DoctorAvailability)
-        .where(DoctorAvailability.doctor_id == current_user.id)
-        .order_by(DoctorAvailability.day_of_week, DoctorAvailability.start_time)
-        .offset(skip)
-        .limit(limit)
-    )
-    
-    count_statement = (
-        select(func.count())
-        .select_from(DoctorAvailability)
-        .where(DoctorAvailability.doctor_id == current_user.id)
-    )
-    
-    if day:
-        statement = statement.where(DoctorAvailability.day_of_week == day)
-        count_statement = count_statement.where(DoctorAvailability.day_of_week == day)
-    
-    slots = session.exec(statement).all()
-    count = session.exec(count_statement).one()
-    
-    return DoctorAvailabilitiesPublic(data=slots, count=count)
-
-
-@router.get("/{slot_id}", response_model=DoctorAvailabilityPublic)
-def get_doctor_availability_slot(
-    session: SessionDep,
-    current_user: CurrentUser,
-    slot_id: uuid.UUID = Path(..., description="Availability slot UUID")
-) -> Any:
-    """
-    Get a specific availability slot by ID.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can view their availability")
-    
-    slot = session.get(DoctorAvailability, slot_id)
-    if not slot:
-        raise HTTPException(status_code=404, detail="Availability slot not found")
-    
-    if slot.doctor_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this slot")
-    
-    return slot
-
-
 @router.get("/schedule", response_model=DoctorScheduleResponse)
 def get_doctor_weekly_schedule(
     session: SessionDep,
@@ -327,6 +265,68 @@ def get_doctor_schedule_with_patient_info(
         doctor_id=current_user.id,
         schedule=schedule
     )
+
+
+@router.get("/{slot_id}", response_model=DoctorAvailabilityPublic)
+def get_doctor_availability_slot(
+    session: SessionDep,
+    current_user: CurrentUser,
+    slot_id: uuid.UUID = Path(..., description="Availability slot UUID")
+) -> Any:
+    """
+    Get a specific availability slot by ID.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can view their availability")
+    
+    slot = session.get(DoctorAvailability, slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Availability slot not found")
+    
+    if slot.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this slot")
+    
+    return slot
+
+
+@router.get("/", response_model=DoctorAvailabilitiesPublic)
+def get_doctor_availability(
+    session: SessionDep,
+    current_user: CurrentUser,
+    day: Optional[DayOfWeek] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+) -> Any:
+    """
+    Get all availability slots for the current doctor.
+    
+    Optionally filter by day of week.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can view their availability")
+    
+    statement = (
+        select(DoctorAvailability)
+        .where(DoctorAvailability.doctor_id == current_user.id)
+        .order_by(DoctorAvailability.day_of_week, DoctorAvailability.start_time)
+        .offset(skip)
+        .limit(limit)
+    )
+    
+    count_statement = (
+        select(func.count())
+        .select_from(DoctorAvailability)
+        .where(DoctorAvailability.doctor_id == current_user.id)
+    )
+    
+    if day:
+        statement = statement.where(DoctorAvailability.day_of_week == day)
+        count_statement = count_statement.where(DoctorAvailability.day_of_week == day)
+    
+    slots = session.exec(statement).all()
+    count = session.exec(count_statement).one()
+    
+    return DoctorAvailabilitiesPublic(data=slots, count=count)
 
 
 # ========== UPDATE OPERATIONS ==========

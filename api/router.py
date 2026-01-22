@@ -10,6 +10,7 @@ from routes import (
     patients,
     prescriptions,
     private,
+    public,
     reports,
     users,
     utils_routes,
@@ -22,6 +23,7 @@ api_router = APIRouter()
 api_router.include_router(login.router)
 api_router.include_router(users.router)
 api_router.include_router(doctor_availability.router)
+api_router.include_router(public.router)
 api_router.include_router(utils_routes.router)
 
 # Feature routers
