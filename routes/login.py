@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -21,6 +21,7 @@ from models.login_model import (
     Token,
     SessionInfo
 )
+from models.public_models import PatientLoginRequest, PatientLoginResponse, PatientLoginSimple
 from models.users_model import UserPublic, User
 from utils.utils import (
     generate_password_reset_token,
@@ -73,23 +74,36 @@ def login_access_token(
     )
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginResponse, tags=["login-doctor"])
 @limiter.limit("5/minute")
 def login(
     request: Request, session: SessionDep, login_data: LoginRequest
 ) -> LoginResponse:
     """
-    Login with email and password
+    Doctor/Staff/Admin login with email and password
+    
+    **Credentials:** Email + Password
+    **Access Level:** Verified doctors, staff, and administrators
+    **Response:** Access token + User details (role, specialization, clinic)
     """
     user = crud.authenticate(
         session=session, email=login_data.email, password=login_data.password
     )
     if not user:
-        raise HTTPException(status_code=400, detail="Incorrect email or password")
+        raise HTTPException(
+            status_code=400,
+            detail="Incorrect email or password. Please verify your credentials."
+        )
     elif not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(
+            status_code=400,
+            detail="Your account is inactive. Contact the administrator."
+        )
     elif not user.is_verified:
-        raise HTTPException(status_code=400, detail="Email not verified")
+        raise HTTPException(
+            status_code=400,
+            detail="Email not verified. Please check your inbox for verification link."
+        )
     
     if login_data.remember_me:
         access_token_expires = timedelta(days=30)
@@ -121,6 +135,148 @@ def login(
         token_type="bearer",
         expires_in=access_token_expires.total_seconds(),
         user=user_data
+    )
+
+
+# COMMENTED OUT - Using simplified patient login instead
+# @router.post("/login/patient", response_model=PatientLoginResponse, tags=["login-patient"])
+# @limiter.limit("5/minute")
+# def login_patient(
+#     request: Request, session: SessionDep, login_data: PatientLoginRequest
+# ) -> PatientLoginResponse:
+#     """
+#     Patient login with phone number and password (PUBLIC ENDPOINT)
+#     
+#     **Credentials:** Phone number + Password
+#     **Authentication:** Not required - public endpoint
+#     **Access Level:** Patients with active accounts
+#     **Response:** Access token + Patient details (age, gender, doctor info)
+#     """
+#     patient = crud.authenticate_patient(
+#         session=session, phone=login_data.phone, password=login_data.password
+#     )
+#     if not patient:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="Incorrect phone number or password. Please verify your credentials."
+#         )
+#     elif not patient.is_active:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="Your patient account is inactive. Please contact your doctor."
+#         )
+#     
+#     if login_data.remember_me:
+#         access_token_expires = timedelta(days=30)
+#     else:
+#         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+#     
+#     access_token = security.create_access_token(
+#         patient.id, expires_delta=access_token_expires
+#     )
+#     
+#     # Update last login
+#     patient.last_login = datetime.now().date()
+#     session.add(patient)
+#     session.commit()
+#     
+#     patient_data = {
+#         "id": str(patient.id),
+#         "full_name": patient.full_name,
+#         "phone": patient.phone,
+#         "email": patient.email,
+#         "gender": patient.gender,
+#         "age": patient.age,
+#         "doctor_id": str(patient.doctor_id),
+#     }
+#     
+#     return PatientLoginResponse(
+#         access_token=access_token,
+#         token_type="bearer",
+#         expires_in=int(access_token_expires.total_seconds()),
+#         patient=patient_data
+#     )
+
+
+@router.post("/login/patient-simple", response_model=PatientLoginResponse, tags=["login-patient"])
+@limiter.limit("5/minute")
+def login_patient_simple(
+    request: Request, session: SessionDep, login_data: PatientLoginSimple
+) -> PatientLoginResponse:
+    """
+    Simplified patient login with name and phone only (PUBLIC ENDPOINT)
+    
+    **Credentials:** Full name + Phone number
+    **Password:** Phone number is used as default password
+    **Authentication:** Not required - public endpoint
+    **Access Level:** Registered patients
+    **Response:** Access token + Patient details
+    """
+    # Find patient by phone and full_name match
+    from sqlmodel import select
+    from models.patients_model import Patient
+    
+    patient = session.exec(
+        select(Patient).where(
+            Patient.phone == login_data.phone,
+            Patient.full_name == login_data.full_name
+        )
+    ).first()
+    
+    if not patient:
+        raise HTTPException(
+            status_code=400,
+            detail="Patient not found. Please verify your name and phone number."
+        )
+    elif not patient.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Your patient account is inactive. Please contact your doctor."
+        )
+    
+    # Use phone as password for authentication
+    from core.security import verify_password
+    phone_as_password = login_data.phone
+    
+    if not patient.hashed_password:
+        # First time login - set password to phone number
+        patient.hashed_password = get_password_hash(phone_as_password)
+        session.add(patient)
+        session.commit()
+    else:
+        # Verify phone as password
+        if not verify_password(phone_as_password, patient.hashed_password):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid credentials. Phone number mismatch."
+            )
+    
+    # Generate token
+    access_token_expires = timedelta(days=30)  # Default longer expiry for simplified login
+    access_token = security.create_access_token(
+        patient.id, expires_delta=access_token_expires
+    )
+    
+    # Update last login
+    patient.last_login = datetime.now().date()
+    session.add(patient)
+    session.commit()
+    
+    patient_data = {
+        "id": str(patient.id),
+        "full_name": patient.full_name,
+        "phone": patient.phone,
+        "email": patient.email,
+        "gender": patient.gender,
+        "age": patient.age,
+        "doctor_id": str(patient.doctor_id),
+    }
+    
+    return PatientLoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=int(access_token_expires.total_seconds()),
+        patient=patient_data
     )
 
 

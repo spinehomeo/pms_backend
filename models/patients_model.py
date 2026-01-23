@@ -63,6 +63,8 @@ class Patient(PatientBase, table=True):
     created_date: date = Field(default_factory=date.today)
     last_visit_date: Optional[date] = Field(default=None)
     is_active: bool = Field(default=True)
+    hashed_password: Optional[str] = Field(default=None)  # For patient login (phone + password)
+    last_login: Optional[date] = Field(default=None)  # Track last login date
     
     # Relationships
     doctor: "User" = Relationship(back_populates="patients")
@@ -124,14 +126,24 @@ class PatientUpdate(SQLModel):
 
 
 # ========== RESPONSE MODELS (API Output) ==========
+class DoctorBasicInfo(SQLModel):
+    """Doctor information for patient response"""
+    id: uuid.UUID
+    full_name: str
+    specialization: Optional[str] = None
+    phone: Optional[str] = None
+    clinic_name: Optional[str] = None
+    clinic_address: Optional[str] = None
+
+
 class PatientPublic(PatientBase):
     """API OUTPUT MODEL for single patient"""
     id: uuid.UUID
-    doctor_id: uuid.UUID
     created_date: date
     last_visit_date: Optional[date] = None
     is_active: bool
     age: Optional[int] = None
+    doctor: DoctorBasicInfo  # Return doctor details instead of just doctor_id
     
     @property
     def age(self) -> Optional[int]:

@@ -163,9 +163,21 @@ def book_appointment_public(
     booking_data: PublicBookingRequest,
 ) -> Any:
     """
-    Public appointment booking without authentication.
+    Public appointment booking - aligned with quick-access registration
     
-    Patient must have registered email. Will create patient record if it doesn't exist.
+    **Flow:**
+    1. If patient doesn't exist, register them with phone + name + gender
+    2. Create appointment record
+    3. Return appointment confirmation
+    
+    **Benefits:**
+    - Single endpoint for registration + booking
+    - Works with quick-access token OR standalone
+    - Phone-based patient identification
+    - Automatic patient record creation
+    
+    **Required fields:** doctor_id, full_name, phone, appointment_date, appointment_time
+    **Optional fields:** gender, reason
     """
     # Validate and parse doctor ID
     try:
@@ -178,37 +190,64 @@ def book_appointment_public(
     if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
-    # Check if patient user exists (must have registered)
-    patient_user = session.exec(
-        select(User).where(
-            User.email == booking_data.patient_email,
-            User.role == UserRole.PATIENT,
+    # Validate appointment time against doctor's availability
+    from routes.appointments import _validate_availability
+    try:
+        _validate_availability(
+            session=session,
+            doctor_id=doctor_uuid,
+            appointment_date=booking_data.appointment_date,
+            appointment_time=booking_data.appointment_time,
+            duration_minutes=30
         )
-    ).first()
+    except HTTPException:
+        raise
     
-    if not patient_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Patient not registered. Please register first at /patients/register",
-        )
-    
-    # Check if patient record exists for this doctor
+    # Check if patient with this phone already exists for this doctor
     patient = session.exec(
         select(Patient).where(
             Patient.doctor_id == doctor_uuid,
-            Patient.email == booking_data.patient_email,
+            Patient.phone == booking_data.phone,
         )
     ).first()
     
-    # Create patient record if doesn't exist
+    # If patient doesn't exist, create them (auto-registration)
     if not patient:
+        # Auto-generate email
+        auto_email = f"patient_{booking_data.phone}@system.local"
+        
+        # Check if email is already used
+        existing_user = session.exec(
+            select(User).where(User.email == auto_email)
+        ).first()
+        
+        if not existing_user:
+            # Create user account
+            from utils import crud
+            from models.users_model import UserCreate, UserRole as UR
+            from core.security import get_password_hash
+            from models.patients_model import PatientGender
+            
+            user_create = UserCreate(
+                email=auto_email,
+                password=booking_data.phone,  # Phone is password
+                full_name=booking_data.full_name,
+                role=UR.PATIENT,
+                phone=booking_data.phone,
+                is_verified=True
+            )
+            user = crud.create_user(session=session, user_create=user_create)
+        else:
+            user = existing_user
+        
+        # Create patient record
         patient = Patient(
             doctor_id=doctor_uuid,
-            full_name=patient_user.full_name,
-            phone=patient_user.phone or "Not provided",
-            cnic="TEMP",  # Placeholder for public bookings
-            gender="other",  # Default gender
-            email=booking_data.patient_email,
+            full_name=booking_data.full_name,
+            phone=booking_data.phone,
+            cnic="PENDING",
+            gender=PatientGender(booking_data.gender) if booking_data.gender else PatientGender.OTHER,
+            hashed_password=get_password_hash(booking_data.phone),
         )
         session.add(patient)
         session.commit()
@@ -229,6 +268,11 @@ def book_appointment_public(
     session.add(appointment)
     session.commit()
     session.refresh(appointment)
+    
+    # Update patient's last visit date
+    patient.last_visit_date = booking_data.appointment_date
+    session.add(patient)
+    session.commit()
     
     return AppointmentBookingResponse(
         success=True,

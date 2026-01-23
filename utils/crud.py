@@ -1,10 +1,12 @@
 import uuid
 from typing import Any
+from datetime import date
 
 from sqlmodel import Session, select
 
 from core.security import get_password_hash, verify_password
 from models.users_model import User, UserCreate, UserUpdate
+from models.patients_model import Patient
 
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
@@ -44,6 +46,36 @@ def authenticate(*, session: Session, email: str, password: str) -> User | None:
     if not verify_password(password, db_user.hashed_password):
         return None
     return db_user
+
+
+# ========== PATIENT AUTHENTICATION FUNCTIONS ==========
+def get_patient_by_phone(*, session: Session, phone: str) -> Patient | None:
+    """Get patient by phone number"""
+    statement = select(Patient).where(Patient.phone == phone)
+    patient = session.exec(statement).first()
+    return patient
+
+
+def authenticate_patient(*, session: Session, phone: str, password: str) -> Patient | None:
+    """Authenticate patient using phone and password"""
+    patient = get_patient_by_phone(session=session, phone=phone)
+    if not patient:
+        return None
+    if not patient.hashed_password:
+        return None
+    if not verify_password(password, patient.hashed_password):
+        return None
+    return patient
+
+
+def set_patient_password(*, session: Session, patient: Patient, password: str) -> Patient:
+    """Set or update patient password"""
+    patient.hashed_password = get_password_hash(password)
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    return patient
+
 
 
 

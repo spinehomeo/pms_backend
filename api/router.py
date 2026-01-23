@@ -4,6 +4,7 @@ from routes import (
     appointments,
     cases,
     doctor_availability,
+    doctor_preferences,
     followups,
     login,
     medicines,
@@ -29,6 +30,7 @@ api_router.include_router(utils_routes.router)
 # Feature routers
 api_router.include_router(appointments.router)
 api_router.include_router(cases.router)
+api_router.include_router(doctor_preferences.router)
 api_router.include_router(followups.router)
 api_router.include_router(medicines.router)
 api_router.include_router(patients.router)

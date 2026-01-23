@@ -20,6 +20,7 @@ from .prescriptions_model import Prescription, PrescriptionMedicine
 from .appointments_model import Appointment
 from .followups_model import FollowUp
 from .doctor_availability_model import DoctorAvailability
+from .doctor_preferences_model import DoctorCaseFieldPreference, DoctorCaseTemplate
 
 __all__ = [
     # Base models
@@ -33,4 +34,5 @@ __all__ = [
     "User", "Patient", "PatientCase", "MedicineMaster", 
     "DoctorMedicineStock", "Prescription", "PrescriptionMedicine",
     "Appointment", "FollowUp", "DoctorAvailability",
+    "DoctorCaseFieldPreference", "DoctorCaseTemplate",
 ]

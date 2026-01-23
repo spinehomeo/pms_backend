@@ -1,26 +1,30 @@
 # models/case_models.py
 import uuid
 from datetime import date
-from typing import Optional, List
-from sqlmodel import Field, Relationship, SQLModel
+from typing import Optional, List, Dict, Any
+from sqlmodel import Field, Relationship, SQLModel, Column
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 # ========== DATABASE MODELS (CRUD) ==========
 class PatientCaseBase(SQLModel):
-    """Base case model"""
-    chief_complaint: str = Field(max_length=500)
+    """Base case model - keeping only required fields"""
+    # Required fields
+    chief_complaint_patient: str = Field(max_length=500)
     duration: str = Field(max_length=100)
-    onset: Optional[str] = Field(default=None)
-    location: Optional[str] = Field(default=None)
-    sensation: Optional[str] = Field(default=None)
-    modalities: Optional[str] = Field(default=None)
-    concomitants: Optional[str] = Field(default=None)
-    generals: Optional[str] = Field(default=None)
-    mentals: Optional[str] = Field(default=None)
+    
+    # Optional standard fields
     physicals: Optional[str] = Field(default=None)
-    miasm_assessment: Optional[str] = Field(default=None)
-    vitality_assessment: Optional[str] = Field(default=None)
-    case_notes: Optional[str] = Field(default=None)
+    noted_complaint_doctor: Optional[str] = Field(default=None, max_length=500)
+    peculiar_symptoms: Optional[str] = Field(default=None)
+    causation: Optional[str] = Field(default=None)
+    lab_reports: Optional[str] = Field(default=None)
+    
+    # Dynamic fields stored as JSON
+    custom_fields: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
 
 
 class PatientCase(PatientCaseBase, table=True):
@@ -55,31 +59,41 @@ class PatientCase(PatientCaseBase, table=True):
 
 
 # ========== REQUEST MODELS (API Input) ==========
-class PatientCaseCreate(PatientCaseBase):
+class PatientCaseCreate(SQLModel):
     """API INPUT MODEL for creating cases"""
     patient_id: uuid.UUID
     appointment_id: Optional[uuid.UUID] = None
+    
+    # Required fields
+    chief_complaint_patient: str
+    duration: str
+    
+    # Optional standard fields
+    physicals: Optional[str] = None
+    noted_complaint_doctor: Optional[str] = None
+    peculiar_symptoms: Optional[str] = None
+    causation: Optional[str] = None
+    lab_reports: Optional[str] = None
+    
+    # Dynamic custom fields
+    custom_fields: Optional[Dict[str, Any]] = None
 
 
 class PatientCaseUpdate(SQLModel):
     """API INPUT MODEL for updating cases"""
-    chief_complaint: Optional[str] = None
+    # All fields are optional for updates
+    chief_complaint_patient: Optional[str] = None
     duration: Optional[str] = None
-    onset: Optional[str] = None
-    location: Optional[str] = None
-    sensation: Optional[str] = None
-    modalities: Optional[str] = None
-    concomitants: Optional[str] = None
-    generals: Optional[str] = None
-    mentals: Optional[str] = None
     physicals: Optional[str] = None
-    miasm_assessment: Optional[str] = None
-    vitality_assessment: Optional[str] = None
-    case_notes: Optional[str] = None
+    noted_complaint_doctor: Optional[str] = None
+    peculiar_symptoms: Optional[str] = None
+    causation: Optional[str] = None
+    lab_reports: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
 
 
 # ========== RESPONSE MODELS (API Output) ==========
-class PatientCasePublic(PatientCaseBase):
+class PatientCasePublic(SQLModel):
     """API OUTPUT MODEL for single case"""
     id: uuid.UUID
     patient_id: uuid.UUID
@@ -87,6 +101,22 @@ class PatientCasePublic(PatientCaseBase):
     appointment_id: Optional[uuid.UUID] = None
     case_date: date
     case_number: str
+    
+    # Core required fields
+    chief_complaint_patient: str
+    duration: str
+    
+    # Optional standard fields
+    physicals: Optional[str] = None
+    noted_complaint_doctor: Optional[str] = None
+    peculiar_symptoms: Optional[str] = None
+    causation: Optional[str] = None
+    lab_reports: Optional[str] = None
+    
+    # Dynamic custom fields
+    custom_fields: Optional[Dict[str, Any]] = None
+    
+    # Relationship data
     patient_name: Optional[str] = None  # Will be populated from relationship
 
 
