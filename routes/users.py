@@ -401,7 +401,7 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
 #         )
 #     
 #     # Auto-generate email (since User model requires it)
-#     auto_email = f"patient_{patient_in.phone}@system.local"
+#     auto_email = f"patient_{patient_in.phone}@pms.internal"
 #     
 #     # Check if auto-generated email is already used
 #     user = crud.get_user_by_email(session=session, email=auto_email)
@@ -447,7 +447,7 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
 #     return user
 
 
-@router.post("/patients/register-simple", response_model=UserPublic, tags=["patient-registration"])
+@router.post("/patients/register-simple", response_model=PatientPublic, tags=["patient-registration"])
 def register_patient_simple(session: SessionDep, patient_in: PatientRegisterSimple) -> Any:
     """
     Simplified patient registration - name, gender, and phone only
@@ -455,9 +455,9 @@ def register_patient_simple(session: SessionDep, patient_in: PatientRegisterSimp
     **Required fields:** full_name, gender, phone
     **No password required** - Phone number becomes the password for login
     **No email verification required**
-    **Patient can login immediately with name + phone via /login/patient-simple**
+    **Patient can login with phone + password directly (no User table entry)**
     
-    Creates a patient user account with minimal information.
+    Creates a patient record only (NOT in User table).
     """
     # Check if patient with this phone already exists
     existing_patient = session.exec(
@@ -469,33 +469,10 @@ def register_patient_simple(session: SessionDep, patient_in: PatientRegisterSimp
             detail="Patient with this phone number already exists"
         )
     
-    # Auto-generate email (since User model requires it)
-    auto_email = f"patient_{patient_in.phone}@system.local"
-    
-    # Check if auto-generated email is already used
-    user = crud.get_user_by_email(session=session, email=auto_email)
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="Patient registration failed. Please try again."
-        )
-    
-    # Create user with PATIENT role (no email verification needed)
-    # Use phone as temporary password
-    user_create = UserCreate(
-        email=auto_email,
-        password=patient_in.phone,  # Phone is used as password
-        full_name=patient_in.full_name,
-        role=UserRole.PATIENT,
-        phone=patient_in.phone,
-        is_verified=True  # Skip email verification for phone-based registration
-    )
-    
-    user = crud.create_user(session=session, user_create=user_create)
-    
-    # Create patient record in Patient table with phone as password
+    # Create patient record directly (no User table entry needed)
+    # Phone number is used as the password for login
     patient = Patient(
-        doctor_id=user.id,  # Temporary - patient will be assigned to doctor later
+        doctor_id=uuid.uuid4(),  # Temporary - patient will be assigned to doctor later
         full_name=patient_in.full_name,
         phone=patient_in.phone,
         cnic="PENDING",  # Placeholder - can be updated later
@@ -508,13 +485,13 @@ def register_patient_simple(session: SessionDep, patient_in: PatientRegisterSimp
     
     # Audit log
     try:
-        audit = AuditLog(user_id=user.id, action="patient_registration_simple", entity="user", entity_id=user.id)
+        audit = AuditLog(user_id=None, action="patient_registration_simple", entity="patient", entity_id=patient.id)
         session.add(audit)
         session.commit()
     except Exception:
         session.rollback()
     
-    return user
+    return patient
 
 
 @router.post("/patients/quick-access", response_model=PatientQuickAccessResponse, tags=["patient-registration"])
@@ -546,32 +523,9 @@ def quick_access_patient(session: SessionDep, patient_in: PatientRegisterSimple)
             detail="Patient with this phone number already exists. Please login instead."
         )
     
-    # Auto-generate email (since User model requires it)
-    auto_email = f"patient_{patient_in.phone}@system.local"
-    
-    # Check if auto-generated email is already used
-    user = crud.get_user_by_email(session=session, email=auto_email)
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="Patient registration failed. Please try again."
-        )
-    
-    # Create user with PATIENT role
-    user_create = UserCreate(
-        email=auto_email,
-        password=patient_in.phone,  # Phone is used as password
-        full_name=patient_in.full_name,
-        role=UserRole.PATIENT,
-        phone=patient_in.phone,
-        is_verified=True  # Skip email verification
-    )
-    
-    user = crud.create_user(session=session, user_create=user_create)
-    
-    # Create patient record with phone as password
+    # Create patient record directly (no User table entry needed)
     patient = Patient(
-        doctor_id=user.id,  # Temporary - will be assigned during appointment
+        doctor_id=uuid.uuid4(),  # Temporary - will be assigned during appointment
         full_name=patient_in.full_name,
         phone=patient_in.phone,
         cnic="PENDING",
@@ -590,7 +544,7 @@ def quick_access_patient(session: SessionDep, patient_in: PatientRegisterSimple)
     )
     
     # Update last login
-    patient.last_login = datetime.now().date()
+    patient.last_login = date.today()
     session.add(patient)
     session.commit()
     
@@ -607,7 +561,7 @@ def quick_access_patient(session: SessionDep, patient_in: PatientRegisterSimple)
     
     # Audit log
     try:
-        audit = AuditLog(user_id=user.id, action="patient_quick_access", entity="user", entity_id=user.id)
+        audit = AuditLog(user_id=None, action="patient_quick_access", entity="patient", entity_id=patient.id)
         session.add(audit)
         session.commit()
     except Exception:

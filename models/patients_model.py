@@ -67,7 +67,7 @@ class Patient(PatientBase, table=True):
     last_login: Optional[date] = Field(default=None)  # Track last login date
     
     # Relationships
-    doctor: "User" = Relationship(back_populates="patients")
+    doctor: "User" = Relationship()  # Doctor who manages this patient (no back_populates - Patient is not in User relationships)
     cases: List["PatientCase"] = Relationship(back_populates="patient")
     appointments: List["Appointment"] = Relationship(back_populates="patient")
     medicine_usage_logs: List["MedicineUsageLog"] = Relationship(back_populates="patient")

@@ -213,34 +213,10 @@ def book_appointment_public(
     
     # If patient doesn't exist, create them (auto-registration)
     if not patient:
-        # Auto-generate email
-        auto_email = f"patient_{booking_data.phone}@system.local"
+        # Create patient record directly (no User table entry)
+        from core.security import get_password_hash
+        from models.patients_model import PatientGender
         
-        # Check if email is already used
-        existing_user = session.exec(
-            select(User).where(User.email == auto_email)
-        ).first()
-        
-        if not existing_user:
-            # Create user account
-            from utils import crud
-            from models.users_model import UserCreate, UserRole as UR
-            from core.security import get_password_hash
-            from models.patients_model import PatientGender
-            
-            user_create = UserCreate(
-                email=auto_email,
-                password=booking_data.phone,  # Phone is password
-                full_name=booking_data.full_name,
-                role=UR.PATIENT,
-                phone=booking_data.phone,
-                is_verified=True
-            )
-            user = crud.create_user(session=session, user_create=user_create)
-        else:
-            user = existing_user
-        
-        # Create patient record
         patient = Patient(
             doctor_id=doctor_uuid,
             full_name=booking_data.full_name,

@@ -3,7 +3,7 @@ from datetime import date
 from typing import List, Optional
 from enum import Enum
 
-from pydantic import EmailStr
+from pydantic import EmailStr, field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -11,13 +11,12 @@ class UserRole(str, Enum):
     DOCTOR = "doctor"
     STAFF = "staff"
     ADMIN = "admin"
-    PATIENT = "patient"
 
 
 # ========== DATABASE MODELS (CRUD) ==========
 class UserBase(SQLModel):
     """Base user model - used for both DB and API"""
-    email: EmailStr = Field(unique=True, index=True, max_length=255)
+    email: Optional[EmailStr] = Field(default=None, unique=True, index=True, max_length=255)
     full_name: str = Field(max_length=255, nullable=False)
     role: UserRole = Field(default=UserRole.DOCTOR)
     phone: Optional[str] = Field(default=None, max_length=20)
@@ -40,8 +39,7 @@ class User(UserBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     hashed_password: str
     
-    # Relationships (based on other model files)
-    patients: List["Patient"] = Relationship(back_populates="doctor")
+    # Relationships (doctors manage patients, cases, etc.)
     cases: List["PatientCase"] = Relationship(back_populates="doctor")
     prescriptions: List["Prescription"] = Relationship(back_populates="doctor")
     appointments: List["Appointment"] = Relationship(back_populates="doctor")
@@ -58,7 +56,12 @@ class User(UserBase, table=True):
 
 # ========== REQUEST MODELS (API Input) ==========
 class UserCreate(SQLModel):
-    """API INPUT MODEL for creating users"""
+    """API INPUT MODEL for creating users
+    
+    ONLY for DOCTOR, STAFF, and ADMIN roles.
+    Patients are created in the Patient table directly, not in User table.
+    Email is mandatory for all users (doctors, staff, admin).
+    """
     email: EmailStr = Field(max_length=255)
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(max_length=255)
@@ -66,6 +69,7 @@ class UserCreate(SQLModel):
     phone: Optional[str] = Field(default=None, max_length=20)
     specialization: Optional[str] = Field(default=None, max_length=255)
     registration_number: Optional[str] = Field(default=None, max_length=100)
+    is_verified: Optional[bool] = Field(default=False)
 
 
 class UserRegister(SQLModel):
