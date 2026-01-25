@@ -1,9 +1,11 @@
 import uuid
-from datetime import date
+import time
+from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlmodel import col, delete, func, select
+from sqlalchemy.exc import IntegrityError
 import jwt
 
 from utils import crud
@@ -448,96 +450,240 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
 
 
 @router.post("/patients/register-simple", response_model=PatientPublic, tags=["patient-registration"])
-def register_patient_simple(session: SessionDep, patient_in: PatientRegisterSimple) -> Any:
+def register_patient_simple(
+    session: SessionDep, 
+    patient_in: PatientRegisterSimple
+) -> Any:
     """
-    Simplified patient registration - name, gender, and phone only
+    Simplified patient registration - name, gender, phone, and doctor selection
     
-    **Required fields:** full_name, gender, phone
+    **Required fields:** full_name, gender, phone, doctor_id
     **No password required** - Phone number becomes the password for login
     **No email verification required**
     **Patient can login with phone + password directly (no User table entry)**
     
-    Creates a patient record only (NOT in User table).
+    Creates a patient record directly assigned to the selected doctor.
+    
+    **Flow:**
+    1. Patient selects doctor from main website
+    2. Frontend passes doctor UUID
+    3. Patient registers with name, gender, and phone
+    4. Patient is automatically assigned to selected doctor
     """
-    # Check if patient with this phone already exists
+    # First verify that the doctor exists and is active
+    doctor = session.get(User, patient_in.doctor_id)
+    if not doctor:
+        raise HTTPException(
+            status_code=404,
+            detail="Doctor not found"
+        )
+    
+    if doctor.role != "doctor":
+        raise HTTPException(
+            status_code=400,
+            detail="Specified user is not a doctor"
+        )
+    
+    if not doctor.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Doctor account is inactive"
+        )
+    
+    # Check if patient with this phone already exists for this doctor
     existing_patient = session.exec(
-        select(Patient).where(Patient.phone == patient_in.phone)
+        select(Patient).where(
+            Patient.phone == patient_in.phone,
+            Patient.doctor_id == patient_in.doctor_id
+        )
     ).first()
+    
     if existing_patient:
         raise HTTPException(
             status_code=400,
-            detail="Patient with this phone number already exists"
+            detail="Patient with this phone number already exists for this doctor"
         )
     
-    # Create patient record directly (no User table entry needed)
-    # Phone number is used as the password for login
+    # Generate unique CNIC placeholder (max 15 chars per database constraint)
+    # Format: P + last 4 digits of phone + 10 random hex chars = 15 chars exactly
+    phone_suffix = patient_in.phone[-4:] if len(patient_in.phone) >= 4 else patient_in.phone
+    random_suffix = uuid.uuid4().hex[:10]
+    unique_cnic = f"P{phone_suffix}{random_suffix}"  # Total: 1+4+10=15 chars
+    
+    # Create patient record with the provided doctor_id
     patient = Patient(
-        doctor_id=uuid.uuid4(),  # Temporary - patient will be assigned to doctor later
+        doctor_id=patient_in.doctor_id,
         full_name=patient_in.full_name,
         phone=patient_in.phone,
-        cnic="PENDING",  # Placeholder - can be updated later
+        cnic=unique_cnic,  # Unique CNIC placeholder
         gender=PatientGender(patient_in.gender),  # Use provided gender
         hashed_password=get_password_hash(patient_in.phone),  # Phone is the password
     )
+    
     session.add(patient)
-    session.commit()
-    session.refresh(patient)
+    
+    try:
+        session.commit()
+        session.refresh(patient)
+    except IntegrityError as e:
+        session.rollback()
+        if "uq_patient_cnic" in str(e) or "duplicate key" in str(e).lower():
+            # Retry with different CNIC if duplicate
+            phone_suffix = patient_in.phone[-4:] if len(patient_in.phone) >= 4 else patient_in.phone
+            random_suffix = uuid.uuid4().hex[:10]
+            unique_cnic = f"P{phone_suffix}{random_suffix}"  # Total: 1+4+10=15 chars
+            
+            patient.cnic = unique_cnic
+            session.add(patient)
+            
+            try:
+                session.commit()
+                session.refresh(patient)
+            except Exception as retry_error:
+                session.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create patient after retry: {str(retry_error)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error creating patient: {str(e)}"
+            )
     
     # Audit log
     try:
-        audit = AuditLog(user_id=None, action="patient_registration_simple", entity="patient", entity_id=patient.id)
+        audit = AuditLog(
+            user_id=patient_in.doctor_id,  # Doctor's ID for audit trail
+            action="patient_registration_simple",
+            entity="patient",
+            entity_id=patient.id
+        )
         session.add(audit)
         session.commit()
     except Exception:
-        session.rollback()
+        session.rollback()  # Don't fail the whole request if audit fails
     
     return patient
 
 
 @router.post("/patients/quick-access", response_model=PatientQuickAccessResponse, tags=["patient-registration"])
-def quick_access_patient(session: SessionDep, patient_in: PatientRegisterSimple) -> Any:
+def quick_access_patient(
+    session: SessionDep,
+    patient_in: PatientRegisterSimple
+) -> Any:
     """
     Quick access endpoint for online appointment booking
     
     Combines patient registration and login in a single API call.
     Perfect for appointment booking flow where patient needs immediate access.
     
-    **Required fields:** full_name, gender, phone
+    **Required fields:** full_name, gender, phone, doctor_id
     **Returns:** Access token + Patient details
-    **Use case:** Patient books appointment → Registers with details → Gets token → Can immediately access profile
+    **Use case:** Patient selects doctor → Fills details → Gets instant token → Can book appointment
     
     **Flow:**
-    1. Patient fills name, gender, phone (+ problem description for appointment)
-    2. This endpoint registers patient and returns access token
-    3. Patient can immediately use token to book appointment or view profile
+    1. Patient selects doctor from main website
+    2. Patient fills name, gender, phone (+ problem description for appointment)
+    3. Endpoint registers patient with selected doctor and returns access token
+    4. Patient can immediately use token to book appointment or view profile
     
     **Benefits:** Only 2 API calls instead of 4 (register + login + book appointment)
     """
-    # Check if patient with this phone already exists
-    existing_patient = session.exec(
-        select(Patient).where(Patient.phone == patient_in.phone)
-    ).first()
-    if existing_patient:
+    # Verify that the doctor exists and is active
+    doctor = session.get(User, patient_in.doctor_id)
+    if not doctor:
         raise HTTPException(
-            status_code=400,
-            detail="Patient with this phone number already exists. Please login instead."
+            status_code=404,
+            detail="Doctor not found"
         )
     
-    # Create patient record directly (no User table entry needed)
-    patient = Patient(
-        doctor_id=uuid.uuid4(),  # Temporary - will be assigned during appointment
-        full_name=patient_in.full_name,
-        phone=patient_in.phone,
-        cnic="PENDING",
-        gender=PatientGender(patient_in.gender),
-        hashed_password=get_password_hash(patient_in.phone),
-    )
-    session.add(patient)
-    session.commit()
-    session.refresh(patient)
+    if doctor.role != "doctor":
+        raise HTTPException(
+            status_code=400,
+            detail="Specified user is not a doctor"
+        )
     
-    # Generate access token (like login endpoint)
-    from datetime import timedelta
+    if not doctor.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Doctor account is inactive"
+        )
+    
+    # Check if patient with this phone already exists for this doctor
+    existing_patient = session.exec(
+        select(Patient).where(
+            Patient.phone == patient_in.phone,
+            Patient.doctor_id == patient_in.doctor_id
+        )
+    ).first()
+    
+    patient = None
+    
+    if existing_patient:
+        # Patient exists - just login
+        patient = existing_patient
+        if not verify_password(patient_in.phone, patient.hashed_password):
+            # Phone changed? Update password
+            patient.hashed_password = get_password_hash(patient_in.phone)
+            session.add(patient)
+            try:
+                session.commit()
+                session.refresh(patient)
+            except IntegrityError as e:
+                session.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error updating patient: {str(e)}"
+                )
+    else:
+        # Generate unique CNIC placeholder (max 15 chars per database constraint)
+        # Format: P + last 4 digits of phone + 10 random hex chars = 15 chars exactly
+        phone_suffix = patient_in.phone[-4:] if len(patient_in.phone) >= 4 else patient_in.phone
+        random_suffix = uuid.uuid4().hex[:10]
+        unique_cnic = f"P{phone_suffix}{random_suffix}"  # Total: 1+4+10=15 chars
+        
+        # Create new patient
+        patient = Patient(
+            doctor_id=patient_in.doctor_id,  # Use the doctor_id from frontend
+            full_name=patient_in.full_name,
+            phone=patient_in.phone,
+            cnic=unique_cnic,  # Unique CNIC placeholder
+            gender=PatientGender(patient_in.gender),
+            hashed_password=get_password_hash(patient_in.phone),
+        )
+        session.add(patient)
+        
+        try:
+            session.commit()
+            session.refresh(patient)
+        except IntegrityError as e:
+            session.rollback()
+            if "uq_patient_cnic" in str(e) or "duplicate key" in str(e).lower():
+                # Retry with different CNIC if duplicate
+                phone_suffix = patient_in.phone[-4:] if len(patient_in.phone) >= 4 else patient_in.phone
+                random_suffix = uuid.uuid4().hex[:10]
+                unique_cnic = f"P{phone_suffix}{random_suffix}"  # Total: 1+4+10=15 chars
+                
+                patient.cnic = unique_cnic
+                session.add(patient)
+                
+                try:
+                    session.commit()
+                    session.refresh(patient)
+                except Exception as retry_error:
+                    session.rollback()
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to create patient after retry: {str(retry_error)}"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error creating patient: {str(e)}"
+                )
+    
+    # Generate access token for the patient
     access_token_expires = timedelta(days=30)
     access_token = security.create_access_token(
         patient.id, expires_delta=access_token_expires
@@ -561,11 +707,16 @@ def quick_access_patient(session: SessionDep, patient_in: PatientRegisterSimple)
     
     # Audit log
     try:
-        audit = AuditLog(user_id=None, action="patient_quick_access", entity="patient", entity_id=patient.id)
+        audit = AuditLog(
+            user_id=patient_in.doctor_id,  # Doctor's ID for audit trail
+            action="patient_quick_access",
+            entity="patient",
+            entity_id=patient.id
+        )
         session.add(audit)
         session.commit()
     except Exception:
-        session.rollback()
+        session.rollback()  # Don't fail if audit log fails
     
     return PatientQuickAccessResponse(
         access_token=access_token,

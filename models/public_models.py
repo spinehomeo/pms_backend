@@ -3,6 +3,7 @@ Public API Models - used for public endpoints (no authentication required)
 """
 from datetime import date, time
 from typing import Optional, Dict, Any
+from uuid import UUID
 from sqlmodel import SQLModel
 from pydantic import EmailStr
 
@@ -33,17 +34,19 @@ class PatientRegisterPhoneOnly(SQLModel):
 
 
 class PatientRegisterSimple(SQLModel):
-    """Simplified patient registration - name, gender, and phone only"""
+    """Simplified patient registration - name, gender, phone, and doctor_id"""
     full_name: str
     gender: str  # "male", "female", "other", "child"
     phone: str
+    doctor_id: UUID  # Doctor selected from main website
     
     class Config:
         json_schema_extra = {
             "example": {
                 "full_name": "John Doe",
                 "gender": "male",
-                "phone": "03001234567"
+                "phone": "03001234567",
+                "doctor_id": "d4e7e6f0-579c-402a-b266-98de85604a54"
             }
         }
 

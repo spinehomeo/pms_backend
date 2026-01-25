@@ -18,31 +18,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema - make email optional for patients."""
-    # Drop the unique constraint on email to allow NULL values
-    op.drop_constraint('user_email_key', 'user', type_='unique')
-    
+    """Upgrade schema - make email optional for patients with partial unique index."""
     # Alter the email column to allow NULL values
+    # This permits patients (who have NULL email) while keeping doctors/staff/admin with emails
     op.alter_column('user', 'email',
                existing_type=sa.VARCHAR(length=255),
                nullable=True,
                existing_nullable=False)
     
-    # Re-create unique index that allows NULL values
-    op.create_unique_constraint('user_email_key', 'user', ['email'], 
-                                postgresql_where=sa.text("email IS NOT NULL"))
+    # Create a partial unique index that only enforces uniqueness for non-NULL emails
+    # This prevents duplicate emails for doctors/staff/admin while allowing multiple NULL values for patients
+    op.create_index('ix_user_email_unique_not_null', 'user', ['email'], 
+                    postgresql_where=sa.text("email IS NOT NULL"), unique=True)
 
 
 def downgrade() -> None:
-    """Downgrade schema - revert email to required."""
-    # Drop the conditional unique constraint
-    op.drop_constraint('user_email_key', 'user', type_='unique')
+    """Downgrade schema - revert email to required with original unique constraint."""
+    # Drop the partial unique index
+    op.drop_index('ix_user_email_unique_not_null', table_name='user')
     
     # Alter the email column back to NOT NULL
     op.alter_column('user', 'email',
                existing_type=sa.VARCHAR(length=255),
                nullable=False,
                existing_nullable=True)
-    
-    # Re-create the original unique constraint
-    op.create_unique_constraint('user_email_key', 'user', ['email'])

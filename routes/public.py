@@ -157,24 +157,26 @@ def check_availability_public(
     )
 
 
-@router.post("/appointments/book", response_model=AppointmentBookingResponse)
+@router.post("/appointments/book-public", response_model=AppointmentBookingResponse)
 def book_appointment_public(
     session: SessionDep,
     booking_data: PublicBookingRequest,
 ) -> Any:
     """
-    Public appointment booking - aligned with quick-access registration
+    PUBLIC appointment booking - for unregistered patients ONLY
+    
+    ⚠️ **THIS ENDPOINT IS FOR PUBLIC USE ONLY**
     
     **Flow:**
-    1. If patient doesn't exist, register them with phone + name + gender
-    2. Create appointment record
-    3. Return appointment confirmation
+    1. Unregistered patient provides name + phone + gender + doctor_id
+    2. System auto-registers patient if not exists
+    3. Creates appointment record
+    4. Returns appointment confirmation
     
-    **Benefits:**
-    - Single endpoint for registration + booking
-    - Works with quick-access token OR standalone
-    - Phone-based patient identification
-    - Automatic patient record creation
+    **Better approach:** Use `/users/patients/quick-access` endpoint instead!
+    - Provides immediate access token
+    - More secure registration flow
+    - Then use authenticated `/appointments/book` to book
     
     **Required fields:** doctor_id, full_name, phone, appointment_date, appointment_time
     **Optional fields:** gender, reason
@@ -216,18 +218,28 @@ def book_appointment_public(
         # Create patient record directly (no User table entry)
         from core.security import get_password_hash
         from models.patients_model import PatientGender
+        import time
+        
+        # Generate unique CNIC (max 15 chars per database constraint)
+        phone_suffix = booking_data.phone[-4:] if len(booking_data.phone) >= 4 else booking_data.phone
+        random_suffix = uuid.uuid4().hex[:10]
+        unique_cnic = f"P{phone_suffix}{random_suffix}"
         
         patient = Patient(
             doctor_id=doctor_uuid,
             full_name=booking_data.full_name,
             phone=booking_data.phone,
-            cnic="PENDING",
+            cnic=unique_cnic,
             gender=PatientGender(booking_data.gender) if booking_data.gender else PatientGender.OTHER,
             hashed_password=get_password_hash(booking_data.phone),
         )
         session.add(patient)
-        session.commit()
-        session.refresh(patient)
+        try:
+            session.commit()
+            session.refresh(patient)
+        except Exception as e:
+            session.rollback()
+            raise HTTPException(status_code=500, detail=f"Error creating patient: {str(e)}")
     
     # Create appointment
     appointment = Appointment(

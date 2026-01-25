@@ -668,3 +668,141 @@ def check_availability(
         "available_slots": available_slots,
         "total_available": len(available_slots)
     }
+
+
+@router.post("/patient/book", response_model=AppointmentPublic)
+def book_appointment_patient(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    doctor_id: uuid.UUID = Query(..., description="Doctor UUID"),
+    appointment_date: date = Query(...),
+    appointment_time: time = Query(...),
+    reason: Optional[str] = Query(None)
+) -> Any:
+    """
+    PROTECTED - Patient books appointment with authenticated patient token
+    
+    **Authentication Required:** Patient must be logged in with valid token
+    
+    **Flow:**
+    1. Patient calls /users/patients/quick-access to get token
+    2. Patient uses token to authenticate this request
+    3. Appointment is created for authenticated patient
+    4. Doctor receives verified appointment
+    
+    **Benefits:**
+    - ✅ Patient identity verified
+    - ✅ Phone number verified during registration
+    - ✅ Prevents spam/fake appointments
+    - ✅ Better tracking and communication
+    
+    **Required fields:** doctor_id, appointment_date, appointment_time
+    **Optional fields:** reason
+    """
+    # Verify request is from authenticated patient
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="Only authenticated patients can book appointments"
+        )
+    
+    # Verify patient is active
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Your patient account is inactive"
+        )
+    
+    # Verify doctor exists and is active
+    from models.users_model import User, UserRole
+    doctor = session.get(User, doctor_id)
+    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    
+    # Verify patient belongs to this doctor
+    if current_user.doctor_id != doctor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not assigned to this doctor. Please contact support."
+        )
+    
+    # Validate appointment time is within doctor's availability
+    _validate_availability(
+        session,
+        doctor_id,
+        appointment_date,
+        appointment_time,
+        30  # 30 minutes default
+    )
+    
+    # Check for scheduling conflicts
+    appointment_time_clean = (
+        appointment_time.replace(tzinfo=None) 
+        if appointment_time.tzinfo else 
+        appointment_time
+    )
+    appointment_end_time = (
+        datetime.combine(date.today(), appointment_time_clean) + 
+        timedelta(minutes=30)
+    ).time()
+    
+    conflicting_appointments = session.exec(
+        select(Appointment).where(
+            and_(
+                Appointment.doctor_id == doctor_id,
+                Appointment.appointment_date == appointment_date,
+                Appointment.status.in_([
+                    AppointmentStatus.SCHEDULED,
+                    AppointmentStatus.CONFIRMED
+                ]),
+                or_(
+                    and_(
+                        appointment_time_clean >= Appointment.appointment_time,
+                        appointment_time_clean < (
+                            Appointment.appointment_time +
+                            (Appointment.duration_minutes * text("INTERVAL '1 minute'"))
+                        )
+                    ),
+                    and_(
+                        Appointment.appointment_time >= appointment_time_clean,
+                        Appointment.appointment_time < appointment_end_time
+                    )
+                )
+            )
+        )
+    ).all()
+    
+    if conflicting_appointments:
+        raise HTTPException(
+            status_code=409,
+            detail="This time slot is no longer available. Please choose another time."
+        )
+    
+    # Create appointment
+    appointment = Appointment(
+        doctor_id=doctor_id,
+        patient_id=current_user.id,
+        appointment_date=appointment_date,
+        appointment_time=appointment_time_clean,
+        duration_minutes=30,
+        status=AppointmentStatus.SCHEDULED,
+        consultation_type="follow_up",
+        reason=reason,
+    )
+    
+    session.add(appointment)
+    session.commit()
+    session.refresh(appointment)
+    
+    # Update patient's last visit date
+    current_user.last_visit_date = appointment_date
+    session.add(current_user)
+    session.commit()
+    
+    appt_dict = {
+        **appointment.__dict__,
+        "patient_name": current_user.full_name,
+        "patient_phone": current_user.phone
+    }
+    return AppointmentPublic(**appt_dict)
