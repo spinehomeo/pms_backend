@@ -286,3 +286,453 @@ def get_patient_stats(
         "gender": patient.gender,                  # NEW: Include gender in stats
         "city": patient.city                       # NEW: Include city in stats
     }
+
+
+# ============================================================================
+# PROTECTED PATIENT ENDPOINTS - For authenticated patients only
+# ============================================================================
+
+from datetime import date
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import and_
+from core.security import get_password_hash, verify_password
+from models.appointments_model import AppointmentStatus, AppointmentPublic
+
+
+@router.get("/me", response_model=PatientPublic)
+def get_patient_profile(
+    session: SessionDep,
+    current_user: CurrentUser
+) -> Any:
+    """
+    Get authenticated patient's profile information
+    
+    **Authentication Required:** Patient token from /users/patients/quick-access or /login/patient
+    
+    **Returns:** Complete patient profile including:
+    - Personal info (name, phone, email, gender, age)
+    - Doctor info (assigned doctor)
+    - Medical info (allergies, medical history, medications)
+    - Account status
+    
+    **Use case:** Patient views their profile on dashboard
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Verify patient is active
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Your patient account is inactive"
+        )
+    
+    return current_user
+
+
+@router.patch("/me/update", response_model=PatientPublic)
+def update_patient_profile(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    patient_update: PatientUpdate
+) -> Any:
+    """
+    Update authenticated patient's profile information
+    
+    **Authentication Required:** Patient token from /users/patients/quick-access or /login/patient
+    
+    **updatable Fields:**
+    - full_name
+    - cnic
+    - email
+    - phone_secondary
+    - date_of_birth
+    - residential_address
+    - postal_address
+    - city
+    - occupation
+    - medical_history
+    - drug_allergies
+    - family_history
+    - current_medications
+    - notes
+    
+    **Protected Fields (Cannot Update):**
+    - phone (primary phone - contact support)
+    - doctor_id (contact doctor)
+    - gender (contact support)
+    
+    **Use case:** Patient updates profile info like address, medical history, CNIC
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Verify patient is active
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Your patient account is inactive"
+        )
+    
+    # Prevent updating protected fields
+    update_dict = patient_update.model_dump(exclude_unset=True)
+    
+    protected_fields = ["phone", "doctor_id", "gender"]
+    if any(field in update_dict for field in protected_fields):
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot update protected fields (phone, doctor_id, gender). Contact support for changes."
+        )
+    
+    # Validate CNIC uniqueness if being updated
+    if "cnic" in update_dict and update_dict["cnic"] != current_user.cnic:
+        existing_cnic = session.exec(
+            select(Patient).where(
+                Patient.cnic == update_dict["cnic"],
+                Patient.id != current_user.id
+            )
+        ).first()
+        if existing_cnic:
+            raise HTTPException(
+                status_code=400,
+                detail="This CNIC is already registered in the system. Please use a different CNIC."
+            )
+    
+    # Update patient record
+    current_user.sqlmodel_update(update_dict)
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    
+    return current_user
+
+
+@router.patch("/me/password")
+def update_patient_password(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_password: str = Query(..., description="Current password (phone number)"),
+    new_password: str = Query(..., min_length=6, description="New password")
+) -> Message:
+    """
+    Update patient's password
+    
+    **Authentication Required:** Patient token
+    
+    **Security Check:**
+    - Current password must match (defaults to phone number)
+    - New password must be at least 6 characters
+    - New password cannot be same as current
+    
+    **Use case:** Patient changes their login password
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Verify current password
+    if not verify_password(current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Current password is incorrect"
+        )
+    
+    # Prevent same password
+    if current_password == new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New password cannot be the same as current password"
+        )
+    
+    # Update password
+    current_user.hashed_password = get_password_hash(new_password)
+    session.add(current_user)
+    session.commit()
+    
+    return Message(message="Password updated successfully")
+
+
+@router.get("/me/appointments", response_model=list[AppointmentPublic])
+def get_patient_appointments(
+    session: SessionDep,
+    current_user: CurrentUser,
+    status: Optional[AppointmentStatus] = Query(None, description="Filter by status"),
+    from_date: Optional[date] = Query(None, description="From date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, description="To date (YYYY-MM-DD)"),
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    skip: int = Query(0, ge=0, description="Skip count")
+) -> Any:
+    """
+    Get authenticated patient's appointments
+    
+    **Authentication Required:** Patient token
+    
+    **Filter Options:**
+    - status: SCHEDULED, CONFIRMED, COMPLETED, CANCELLED, NO_SHOW
+    - from_date: Appointments on or after this date
+    - to_date: Appointments on or before this date
+    
+    **Returns:** List of patient's appointments with doctor info
+    
+    **Sorting:** By date (ascending - upcoming first)
+    
+    **Use case:** Patient sees their appointment history and upcoming bookings
+    
+    **Example Queries:**
+    - `/patients/me/appointments` - All appointments
+    - `/patients/me/appointments?status=SCHEDULED` - Upcoming appointments
+    - `/patients/me/appointments?from_date=2026-01-25&to_date=2026-02-25` - This month
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Verify patient is active
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Your patient account is inactive"
+        )
+    
+    # Build query
+    query = select(Appointment).where(
+        Appointment.patient_id == current_user.id
+    ).order_by(Appointment.appointment_date.asc(), Appointment.appointment_time.asc())
+    
+    # Apply filters
+    filters = []
+    
+    if status:
+        filters.append(Appointment.status == status)
+    
+    if from_date:
+        filters.append(Appointment.appointment_date >= from_date)
+    
+    if to_date:
+        filters.append(Appointment.appointment_date <= to_date)
+    
+    if filters:
+        query = query.where(and_(*filters))
+    
+    # Get appointments with limit and skip
+    appointments = session.exec(query.offset(skip).limit(limit)).all()
+    
+    if not appointments:
+        return []
+    
+    # Format response with doctor info
+    response_appointments = []
+    for appt in appointments:
+        appt_dict = {
+            **appt.__dict__,
+            "patient_name": current_user.full_name,
+            "patient_phone": current_user.phone
+        }
+        response_appointments.append(AppointmentPublic(**appt_dict))
+    
+    return response_appointments
+
+
+@router.get("/me/appointments/upcoming")
+def get_upcoming_patient_appointments(
+    session: SessionDep,
+    current_user: CurrentUser,
+    days: int = Query(30, ge=1, le=365, description="Days ahead to check")
+) -> Any:
+    """
+    Get patient's upcoming appointments
+    
+    **Authentication Required:** Patient token
+    
+    **Returns:** Appointments scheduled for next N days (default 30 days)
+    
+    **Status Filter:** Only SCHEDULED and CONFIRMED appointments
+    
+    **Use case:** Patient sees next 30 days of appointments on dashboard
+    
+    **Example:**
+    - `/patients/me/appointments/upcoming` - Next 30 days
+    - `/patients/me/appointments/upcoming?days=7` - Next 7 days
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Verify patient is active
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Your patient account is inactive"
+        )
+    
+    today = date.today()
+    # Simple date calculation
+    try:
+        future_date = today.replace(day=today.day + days)
+    except ValueError:
+        # Handle month overflow
+        from datetime import timedelta
+        future_date = today + timedelta(days=days)
+    
+    # Get upcoming appointments
+    appointments = session.exec(
+        select(Appointment)
+        .where(
+            and_(
+                Appointment.patient_id == current_user.id,
+                Appointment.appointment_date >= today,
+                Appointment.appointment_date <= future_date,
+                Appointment.status.in_([
+                    AppointmentStatus.SCHEDULED,
+                    AppointmentStatus.CONFIRMED
+                ])
+            )
+        )
+        .order_by(Appointment.appointment_date.asc(), Appointment.appointment_time.asc())
+    ).all()
+    
+    if not appointments:
+        return {
+            "message": "No upcoming appointments",
+            "appointments": [],
+            "from_date": today.isoformat(),
+            "to_date": future_date.isoformat()
+        }
+    
+    # Format response
+    response_appointments = []
+    for appt in appointments:
+        appt_dict = {
+            **appt.__dict__,
+            "patient_name": current_user.full_name,
+            "patient_phone": current_user.phone
+        }
+        response_appointments.append(AppointmentPublic(**appt_dict))
+    
+    return {
+        "total": len(response_appointments),
+        "appointments": response_appointments,
+        "from_date": today.isoformat(),
+        "to_date": future_date.isoformat(),
+        "days_ahead": days
+    }
+
+
+@router.get("/me/appointments/{appointment_id}", response_model=AppointmentPublic)
+def get_patient_appointment_detail(
+    session: SessionDep,
+    current_user: CurrentUser,
+    appointment_id: uuid.UUID
+) -> Any:
+    """
+    Get detail of a specific appointment
+    
+    **Authentication Required:** Patient token
+    
+    **Returns:** Complete appointment details including:
+    - Date, time, duration
+    - Doctor info
+    - Reason, status
+    - Consultation type
+    
+    **Use case:** Patient views appointment details before attending
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Get appointment
+    appointment = session.get(Appointment, appointment_id)
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    # Verify patient owns this appointment
+    if appointment.patient_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not authorized to view this appointment"
+        )
+    
+    appt_dict = {
+        **appointment.__dict__,
+        "patient_name": current_user.full_name,
+        "patient_phone": current_user.phone
+    }
+    return AppointmentPublic(**appt_dict)
+
+
+@router.post("/me/appointments/{appointment_id}/cancel")
+def cancel_patient_appointment(
+    session: SessionDep,
+    current_user: CurrentUser,
+    appointment_id: uuid.UUID,
+    reason: Optional[str] = Query(None, description="Reason for cancellation")
+) -> Message:
+    """
+    Cancel patient's appointment
+    
+    **Authentication Required:** Patient token
+    
+    **Requirements:**
+    - Appointment must be SCHEDULED or CONFIRMED status
+    - Only patient can cancel their own appointment
+    
+    **Use case:** Patient cancels appointment online
+    """
+    # Verify this is a patient record
+    if not isinstance(current_user, Patient):
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for patients only"
+        )
+    
+    # Get appointment
+    appointment = session.get(Appointment, appointment_id)
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    # Verify patient owns this appointment
+    if appointment.patient_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not authorized to cancel this appointment"
+        )
+    
+    # Check if appointment can be cancelled
+    if appointment.status not in [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel appointment with status: {appointment.status}"
+        )
+    
+    # Cancel appointment
+    appointment.status = AppointmentStatus.CANCELLED
+    if reason:
+        appointment.notes = f"Cancelled by patient: {reason}"
+    
+    session.add(appointment)
+    session.commit()
+    
+    return Message(message=f"Appointment cancelled successfully")
