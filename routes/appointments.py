@@ -5,9 +5,10 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Path
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import func, select, and_, or_, text
 
-from api.deps import CurrentUser, SessionDep
+from api.deps import CurrentUser, SessionDep, CurrentPatient
 from models.appointments_model import (
     Appointment, AppointmentCreate, AppointmentUpdate, AppointmentPublic, 
     AppointmentsPublic, AppointmentStatus
@@ -395,9 +396,16 @@ def create_appointment(
         appointment_in,
         update={"doctor_id": current_user.id}
     )
-    session.add(appointment)
-    session.commit()
-    session.refresh(appointment)
+    try:
+        session.add(appointment)
+        session.commit()
+        session.refresh(appointment)
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This time slot is no longer available. Another appointment may have been created just now."
+        )
     
     # Update patient's last visit date
     patient.last_visit_date = appointment.appointment_date
@@ -674,7 +682,7 @@ def check_availability(
 def book_appointment_patient(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    patient: CurrentPatient,
     doctor_id: uuid.UUID = Query(..., description="Doctor UUID"),
     appointment_date: date = Query(...),
     appointment_time: time = Query(...),
@@ -686,13 +694,13 @@ def book_appointment_patient(
     **Authentication Required:** Patient must be logged in with valid token
     
     **Flow:**
-    1. Patient calls /users/patients/quick-access to get token
+    1. Patient calls /login/patient-simple to get token with entity='patient'
     2. Patient uses token to authenticate this request
     3. Appointment is created for authenticated patient
     4. Doctor receives verified appointment
     
     **Benefits:**
-    - ✅ Patient identity verified
+    - ✅ Patient identity verified via Patient table
     - ✅ Phone number verified during registration
     - ✅ Prevents spam/fake appointments
     - ✅ Better tracking and communication
@@ -700,15 +708,8 @@ def book_appointment_patient(
     **Required fields:** doctor_id, appointment_date, appointment_time
     **Optional fields:** reason
     """
-    # Verify request is from authenticated patient
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="Only authenticated patients can book appointments"
-        )
-    
     # Verify patient is active
-    if not current_user.is_active:
+    if not patient.is_active:
         raise HTTPException(
             status_code=403,
             detail="Your patient account is inactive"
@@ -721,7 +722,7 @@ def book_appointment_patient(
         raise HTTPException(status_code=404, detail="Doctor not found")
     
     # Verify patient belongs to this doctor
-    if current_user.doctor_id != doctor_id:
+    if patient.doctor_id != doctor_id:
         raise HTTPException(
             status_code=403,
             detail="You are not assigned to this doctor. Please contact support."
@@ -782,7 +783,7 @@ def book_appointment_patient(
     # Create appointment
     appointment = Appointment(
         doctor_id=doctor_id,
-        patient_id=current_user.id,
+        patient_id=patient.id,
         appointment_date=appointment_date,
         appointment_time=appointment_time_clean,
         duration_minutes=30,
@@ -791,18 +792,25 @@ def book_appointment_patient(
         reason=reason,
     )
     
-    session.add(appointment)
-    session.commit()
-    session.refresh(appointment)
+    try:
+        session.add(appointment)
+        session.commit()
+        session.refresh(appointment)
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This time slot is no longer available. Please choose another time."
+        )
     
     # Update patient's last visit date
-    current_user.last_visit_date = appointment_date
-    session.add(current_user)
+    patient.last_visit_date = appointment_date
+    session.add(patient)
     session.commit()
     
     appt_dict = {
         **appointment.__dict__,
-        "patient_name": current_user.full_name,
-        "patient_phone": current_user.phone
+        "patient_name": patient.full_name,
+        "patient_phone": patient.phone
     }
     return AppointmentPublic(**appt_dict)

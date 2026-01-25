@@ -12,6 +12,7 @@ from core.config import settings
 from core.db import engine
 from models.login_model import TokenPayload
 from models.users_model import User
+from models.patients_model import Patient
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -47,6 +48,60 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_current_patient(session: SessionDep, token: TokenDep) -> Patient:
+    """
+    Authentication dependency for patient-protected endpoints.
+    
+    Validates that:
+    1. Token contains entity='patient' (not a user/doctor token)
+    2. Patient ID in token exists in Patient table
+    3. Patient account is active
+    
+    This completely separate from get_current_user() to ensure patients
+    authenticate from the Patient table, not the User table.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid patient authentication",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
+        )
+
+        entity = payload.get("entity")
+        patient_id = payload.get("sub")
+
+        # Verify this is a patient token, not a user/doctor token
+        if entity != "patient" or not patient_id:
+            raise credentials_exception
+
+    except (jwt.JWTError, jwt.DecodeError, ValidationError):
+        raise credentials_exception
+
+    # Query Patient table, not User table
+    patient = session.get(Patient, patient_id)
+
+    if not patient:
+        raise HTTPException(
+            status_code=404,
+            detail="Patient not found",
+        )
+
+    if not patient.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Patient account is inactive",
+        )
+
+    return patient
+
+
+CurrentPatient = Annotated[Patient, Depends(get_current_patient)]
 
 
 def get_current_active_superuser(current_user: CurrentUser) -> User:

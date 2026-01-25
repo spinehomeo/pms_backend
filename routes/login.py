@@ -59,7 +59,7 @@ def login_access_token(
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
-        user.id, expires_delta=access_token_expires
+        user.id, expires_delta=access_token_expires, entity="user", role=user.role.value
     )
     
     # Update last login
@@ -111,7 +111,7 @@ def login(
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     access_token = security.create_access_token(
-        user.id, expires_delta=access_token_expires
+        user.id, expires_delta=access_token_expires, entity="user", role=user.role.value
     )
     
     # Update last login
@@ -254,7 +254,7 @@ def login_patient_simple(
     # Generate token
     access_token_expires = timedelta(days=30)  # Default longer expiry for simplified login
     access_token = security.create_access_token(
-        patient.id, expires_delta=access_token_expires
+        patient.id, expires_delta=access_token_expires, entity="patient", role="patient"
     )
     
     # Update last login

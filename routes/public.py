@@ -6,7 +6,8 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlmodel import select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import select, and_
 
 from api.deps import SessionDep
 from models.users_model import User, UserRole
@@ -124,6 +125,25 @@ def check_availability_public(
             message="No available slots for this date",
         )
     
+    # Get appointments for the day to identify booked slots
+    appointments = session.exec(
+        select(Appointment).where(
+            and_(
+                Appointment.doctor_id == doctor_uuid,
+                Appointment.appointment_date == check_date,
+                Appointment.status.in_([
+                    AppointmentStatus.SCHEDULED,
+                    AppointmentStatus.CONFIRMED
+                ])
+            )
+        )
+    ).all()
+    
+    # Create set of booked time strings for quick lookup
+    booked_times = set()
+    for appointment in appointments:
+        booked_times.add(appointment.appointment_time.strftime("%H:%M"))
+    
     # Calculate 30-minute slots from availability windows
     available_slots = []
     for slot in availability_slots:
@@ -132,13 +152,18 @@ def check_availability_public(
         
         while current_time + timedelta(minutes=30) <= end_time:
             slot_start = current_time.time()
+            slot_start_str = slot_start.strftime("%H:%M")
             slot_end = (current_time + timedelta(minutes=30)).time()
+            
+            # Check if this slot is booked
+            is_booked = slot_start_str in booked_times
             
             available_slots.append(
                 AvailableSlot(
-                    start=slot_start.strftime("%H:%M"),
+                    start=slot_start_str,
                     end=slot_end.strftime("%H:%M"),
                     duration_minutes=30,
+                    booked=is_booked
                 )
             )
             current_time += timedelta(minutes=30)
@@ -253,9 +278,16 @@ def book_appointment_public(
         reason=booking_data.reason,
     )
     
-    session.add(appointment)
-    session.commit()
-    session.refresh(appointment)
+    try:
+        session.add(appointment)
+        session.commit()
+        session.refresh(appointment)
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This time slot is no longer available. Please choose another time."
+        )
     
     # Update patient's last visit date
     patient.last_visit_date = booking_data.appointment_date

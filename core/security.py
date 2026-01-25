@@ -44,9 +44,36 @@ ALGORITHM = "HS256"
 # -----------------------------
 # JWT Token creation
 # -----------------------------
-def create_access_token(subject: str | Any, expires_delta: timedelta) -> str:
+def create_access_token(
+    subject: str | Any, 
+    expires_delta: timedelta,
+    entity: str = "user",
+    role: str = None
+) -> str:
+    """
+    Create JWT access token.
+    
+    Args:
+        subject: The user/patient ID
+        expires_delta: Token expiration time
+        entity: Type of actor - "user" (doctor/staff/admin) or "patient"
+        role: User role - "doctor", "staff", "admin", "patient"
+    
+    Token payload will include:
+    - sub: subject ID
+    - entity: actor type (determines which table to query)
+    - role: role type (for authorization)
+    - exp: expiration timestamp
+    """
     expire = datetime.now(timezone.utc) + expires_delta
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {
+        "exp": expire,
+        "sub": str(subject),
+        "entity": entity,
+    }
+    if role:
+        to_encode["role"] = role
+    
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

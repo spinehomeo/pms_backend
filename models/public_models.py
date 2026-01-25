@@ -127,6 +127,7 @@ class AvailableSlot(SQLModel):
     start: str
     end: str
     duration_minutes: int = 30
+    booked: bool = False  # Whether this slot is already booked
 
 
 class AvailabilityResponse(SQLModel):
