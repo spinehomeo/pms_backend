@@ -3,7 +3,7 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Security
 from sqlmodel import col, delete, func, select
 from sqlalchemy.exc import IntegrityError
 import jwt
@@ -12,7 +12,6 @@ from utils import crud
 from api.deps import (
     CurrentUser,
     SessionDep,
-    TokenDep,
     get_current_active_superuser,
 )
 from core import security
@@ -41,17 +40,19 @@ from utils.utils import (
 )
 from models.audit_model import AuditLog
 
-router = APIRouter(prefix="/users", tags=["users"])
-
-
-@router.get(
-    "/",
-    dependencies=[Depends(get_current_active_superuser)],
-    response_model=UsersPublic,
+# Admin-only router with Security at router level
+# Security() applied once to all endpoints on this router
+admin_router = APIRouter(
+    prefix="/users",
+    tags=["👥 User Management"],
+    dependencies=[Security(get_current_active_superuser)]
 )
+
+
+@admin_router.get("/", response_model=UsersPublic)
 def read_users(session: SessionDep, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)) -> Any:
     """
-    Retrieve users.
+    Retrieve all users (admin only).
     """
     count_statement = select(func.count()).select_from(User)
     count = session.exec(count_statement).one()
@@ -62,9 +63,7 @@ def read_users(session: SessionDep, skip: int = Query(0, ge=0), limit: int = Que
     return UsersPublic(data=users, count=count)
 
 
-@router.post(
-    "/", dependencies=[Depends(get_current_active_superuser)], response_model=UserPublic
-)
+@admin_router.post("/", response_model=UserPublic)
 def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     """
     Create new user (admin only).
@@ -99,6 +98,10 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
         # Don't break user creation on audit failures
         session.rollback()
     return user
+
+
+# Export admin_router as 'router' for api/router.py to include
+router = admin_router
 
 
 @router.patch("/me", response_model=UserPublic)
@@ -449,7 +452,7 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
 #     return user
 
 
-@router.post("/patients/register-simple", response_model=PatientPublic, tags=["patient-registration"])
+@router.post("/patients/register-simple", response_model=PatientPublic)
 def register_patient_simple(
     session: SessionDep, 
     patient_in: PatientRegisterSimple
@@ -567,7 +570,7 @@ def register_patient_simple(
     return patient
 
 
-@router.post("/patients/quick-access", response_model=PatientQuickAccessResponse, tags=["patient-registration"])
+@router.post("/patients/quick-access", response_model=PatientQuickAccessResponse)
 def quick_access_patient(
     session: SessionDep,
     patient_in: PatientRegisterSimple

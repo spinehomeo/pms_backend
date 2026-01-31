@@ -1,5 +1,6 @@
 import sentry_sdk
 from fastapi import FastAPI, Request
+from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
@@ -34,8 +35,43 @@ if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    description="""
+## 🔐 Authentication Guide
+
+This API uses **two completely separate authentication systems** for two different user domains:
+
+### 🧑‍⚕️ Doctor / Staff / Administrator
+- **Authentication type:** OAuth2 Password Bearer
+- **Swagger scheme name:** `DoctorOAuth2`
+- **Login endpoint:** `POST /login/access-token`
+- **Token format:** JWT with `"entity": "user"` claim
+- **Use this for:** Doctor, staff, and admin management endpoints
+- **Swagger:** Use the "Authorize" button → enter username + password
+
+### 🧍 Patient
+- **Authentication type:** HTTP Bearer (JWT)
+- **Swagger scheme name:** `PatientBearer`  
+- **Login endpoint:** `POST /login/patient-simple`
+- **Token format:** JWT with `"entity": "patient"` claim
+- **Use this for:** Patient profile, appointments, and related endpoints
+- **Swagger:** Use the "Authorize" button → paste entire JWT token
+
+### ⚠️ CRITICAL NOTES
+- **Tokens are NOT interchangeable.** Using a patient token on a doctor endpoint will fail with 403 Forbidden.
+- Each endpoint explicitly declares which auth method it requires.
+- Swagger will only send the correct token to endpoints that accept it.
+- Patient tokens are stored in the **Patient** table.
+- Doctor/staff/admin tokens are stored in the **User** table.
+- **Note:** Authorization uses roles (ADMIN, DOCTOR, STAFF) stored in JWT. Scope-based access control is not used.
+""",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     generate_unique_id_function=custom_generate_unique_id,
+    swagger_ui_parameters={"swaggerOptions": {"persistAuthorization": True}},
+    swagger_ui_init_oauth={
+        "usePkceWithAuthorizationCodeFlow": False
+    }
 )
 
 # Configure rate limiting
@@ -61,6 +97,79 @@ if settings.all_cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title=app.title,
+        version="1.0.0",
+        description=app.description,
+        routes=app.routes,
+    )
+
+    # =========================================================================
+    # CONFIGURE SECURITY SCHEMES (CLEAN UP AUTO-GENERATED ONES)
+    # =========================================================================
+    components = openapi_schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+
+    # Remove auto-generated OAuth2PasswordBearer to avoid duplication
+    # (FastAPI auto-generates one, but we want only our explicit ones)
+    security_schemes.clear()
+
+    # Doctor/Staff/Admin: OAuth2 Password Bearer
+    security_schemes["DoctorOAuth2"] = {
+        "type": "oauth2",
+        "flows": {
+            "password": {
+                "tokenUrl": f"{settings.API_V1_STR}/login/access-token",
+                "scopes": {
+                    "read": "Read access",
+                    "write": "Write access"
+                }
+            }
+        },
+        "description": "OAuth2 password flow for doctors, staff, and administrators. Use /login/access-token endpoint."
+    }
+
+    # Patient: HTTP Bearer JWT
+    security_schemes["PatientBearer"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT Bearer token for patient authentication. Use /login/patient-simple endpoint to obtain token."
+    }
+
+    # =========================================================================
+    # SET TAG DESCRIPTIONS
+    # =========================================================================
+    openapi_schema["tags"] = [
+        {
+            "name": "🧑‍⚕️ Doctor / Staff / Admin",
+            "description": "Endpoints for doctors, staff, and administrators only. Requires **DoctorOAuth2** authentication. Tokens are issued via `/login/access-token`."
+        },
+        {
+            "name": "🧍 Patient",
+            "description": "Endpoints for authenticated patients only. Requires **PatientBearer** JWT token. Tokens are issued via `/login/patient-simple`."
+        },
+        {
+            "name": "🌍 Public",
+            "description": "Publicly accessible endpoints. No authentication required."
+        },
+        {
+            "name": "🔑 Authentication",
+            "description": "Authentication endpoints. Choose the appropriate login based on your user type."
+        },
+    ]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 @app.get("/")

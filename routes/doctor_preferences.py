@@ -13,7 +13,7 @@ from models.doctor_preferences_model import (
 )
 from models.login_model import Message
 
-router = APIRouter(prefix="/doctor-preferences", tags=["doctor-preferences"])
+router = APIRouter(prefix="/doctor-preferences", tags=["⚙️ Doctor Preferences"])
 
 
 @router.post("/initialize-standard-fields")

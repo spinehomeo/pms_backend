@@ -22,7 +22,7 @@ from models.public_models import (
     PublicBookingRequest,
 )
 
-router = APIRouter(prefix="/public", tags=["public"])
+router = APIRouter(prefix="/public", tags=["🌍 Public"])
 
 
 @router.get("/doctors", response_model=list[DoctorPublicInfo])

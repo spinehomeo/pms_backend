@@ -16,7 +16,7 @@ from models.medicines_model import (
 from models.prescriptions_model import PrescriptionMedicine
 from models.login_model import Message
 
-router = APIRouter(prefix="/medicines", tags=["medicines"])
+router = APIRouter(prefix="/medicines", tags=["💊 Medicines"])
 
 
 @router.get("/master", response_model=MedicinesPublic)

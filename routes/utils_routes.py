@@ -12,7 +12,7 @@ from utils.utils import (
     generate_email_verification_token
 )
 
-router = APIRouter(prefix="/utils", tags=["utils"])
+router = APIRouter(prefix="/utils", tags=["🛠️ Utilities"])
 
 
 @router.post(

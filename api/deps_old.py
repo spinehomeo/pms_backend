@@ -27,9 +27,7 @@ from core.auth_utils import (
 
 # Doctor/Staff/Admin: OAuth2 Password Bearer (role-based, no scopes)
 doctor_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/login/access-token",
-    scheme_name="DoctorOAuth2",
-    description="OAuth2 password flow for doctors, staff, and admins"
+    tokenUrl=f"{settings.API_V1_STR}/login/access-token"
 )
 
 # Patient: HTTP Bearer JWT
@@ -63,7 +61,7 @@ def get_current_user(
     3. User ID in token exists in User table
     4. User account is active
     
-    Swagger security: DoctorOAuth2
+    🔐 Swagger security: DoctorOAuth2
     
     Raises:
         AuthenticationError: Invalid/expired token
@@ -91,16 +89,15 @@ def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def get_current_active_superuser(
+def get_current_active_superuser(current_user: CurrentUser) -> User:
+    """
+    Dependency for superuser-only
     current_user: User = Security(get_current_user)
 ) -> User:
     """
     Dependency for superuser-only endpoints.
     
-    Uses Security() not Depends() - informs Swagger that OAuth2 is required.
-    This is CRITICAL for proper Swagger authorization.
-    
-    Args:
+    ⚠️ Uses Security() not Depends() — informs Swagger that OAuth2 is required
         current_user: Current authenticated user (from get_current_user)
     
     Returns:
@@ -114,17 +111,16 @@ def get_current_active_superuser(
             status_code=403,
             detail="The user doesn't have enough privileges"
         )
-    return current_user
-
-
-def require_doctor_role(
     current_user: User = Security(get_current_user)
 ) -> User:
     """
     Dependency for doctor-only endpoints.
     
-    Uses Security() not Depends() - informs Swagger that OAuth2 is required.
-    This is CRITICAL for proper Swagger authorization.
+    ⚠️ Uses Security() not Depends() — informs Swagger that OAuth2 is required
+    """
+    Dependency for doctor-only endpoints.
+    
+    Checks that current user has doctor role (beyond superuser check).
     
     Args:
         current_user: Current authenticated user
@@ -137,20 +133,19 @@ def require_doctor_role(
     """
     if not current_user.is_doctor:
         raise HTTPException(
-            status_code=403,
-            detail="Doctor role required"
-        )
-    return current_user
-
-
-def require_staff_role(
+            status_code
     current_user: User = Security(get_current_user)
 ) -> User:
     """
     Dependency for staff-only endpoints.
     
-    Uses Security() not Depends() - informs Swagger that OAuth2 is required.
-    This is CRITICAL for proper Swagger authorization.
+    ⚠️ Uses Security() not Depends() — informs Swagger that OAuth2 is required
+    return current_user
+
+
+def require_staff_role(current_user: CurrentUser) -> User:
+    """
+    Dependency for staff-only endpoints.
     
     Args:
         current_user: Current authenticated user
@@ -187,9 +182,9 @@ def get_current_patient(
     3. Patient ID in token exists in Patient table
     4. Patient account is active
     
-    Swagger security: PatientBearer
+    🔐 Swagger security: PatientBearer
     
-    IMPORTANT: This is COMPLETELY SEPARATE from get_current_user()
+    ⚠️ IMPORTANT: This is COMPLETELY SEPARATE from get_current_user()
     
     Raises:
         AuthenticationError: Invalid/expired token

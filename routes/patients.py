@@ -1,31 +1,84 @@
 # api/routes/patients.py
+"""
+Patient Management Endpoints
+
+Organized by Authentication Type:
+- DOCTOR/ADMIN ENDPOINTS: Lines 1-300   (Use OAuth2 - CurrentUser)
+- PATIENT ENDPOINTS:      Lines 300+    (Use Bearer JWT - CurrentPatient)
+"""
 import uuid
 from typing import Any, List, Optional
+from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlmodel import func, select
+from sqlmodel import func, select, and_
+from sqlalchemy.exc import IntegrityError
 
-from api.deps import CurrentUser, SessionDep
+from api.deps import (
+    CurrentUser,
+    SessionDep,
+    get_current_user,
+    get_current_patient,
+    CurrentPatient,
+    require_doctor_role,
+)
+from core.security import get_password_hash, verify_password
 from models.patients_model import (
     Patient, PatientCreate, PatientUpdate, PatientPublic, PatientsPublic,
-    PatientGender,  # Add this import
+    PatientGender,
 )
-from models.appointments_model import Appointment
+from models.appointments_model import Appointment, AppointmentStatus, AppointmentPublic
 from models.cases_model import PatientCase
 from models.login_model import Message
 
-router = APIRouter(prefix="/patients", tags=["patients"])
+# Create two routers with separate tags
+doctor_router = APIRouter(
+    prefix="/patients",
+    tags=["🧑‍⚕️ Doctor / Staff / Admin"]
+)
+
+patient_router = APIRouter(
+    prefix="/patients",
+    tags=["🧍 Patient"]
+)
+
+# Note: We'll include both routers in the main api_router to serve from same prefix
+router = APIRouter()
 
 
-@router.get("/", response_model=PatientsPublic)
+# ============================================================================
+# DOCTOR/ADMIN ENDPOINTS - For doctors/staff/admins managing patients
+# Authentication: OAuth2 (Doctor/Staff/Admin User Token)
+# ============================================================================
+
+@doctor_router.get(
+    "/",
+    response_model=PatientsPublic,
+    summary="List all patients",
+    description="""
+🔐 **Authentication Required:** DoctorOAuth2
+
+This endpoint is accessible to doctors and staff only.
+
+**Functionality:**
+- List all patients assigned to the current doctor
+- Search by name, phone, email, CNIC, or city
+- Filter by payment status or gender
+- Pagination support
+
+**Response:** List of patient records with count
+
+**Use case:** Doctor views patient list in dashboard
+    """,
+)
 def read_patients(
     session: SessionDep,
     current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = Query(None, min_length=1, max_length=100),
-    payment_status: Optional[bool] = Query(None),  # NEW: Filter by payment status
-    gender: Optional[PatientGender] = Query(None),  # NEW: Filter by gender
+    payment_status: Optional[bool] = Query(None),
+    gender: Optional[PatientGender] = Query(None),
 ) -> Any:
     """
     Retrieve patients with optional search.
@@ -82,7 +135,23 @@ def read_patients(
     return PatientsPublic(data=patients, count=count)
 
 
-@router.get("/{patient_id}", response_model=PatientPublic)
+@doctor_router.get(
+    "/{patient_id}",
+    response_model=PatientPublic,
+    summary="Get patient by ID",
+    description="""
+🔐 **Authentication Required:** DoctorOAuth2
+
+This endpoint is accessible to doctors only.
+
+**Functionality:**
+- Retrieve detailed information for a specific patient
+- Only doctors can access their own patients
+- Returns complete patient profile
+
+**Use case:** Doctor views detailed patient profile
+    """,
+)
 def read_patient(
     session: SessionDep,
     current_user: CurrentUser,
@@ -105,7 +174,31 @@ def read_patient(
     return patient
 
 
-@router.post("/", response_model=PatientPublic)
+@doctor_router.post(
+    "/",
+    response_model=PatientPublic,
+    summary="Create new patient",
+    description="""
+🔐 **Authentication Required:** DoctorOAuth2
+
+This endpoint is accessible to doctors only.
+
+**Functionality:**
+- Create a new patient record
+- Auto-assigns patient to current doctor
+- Validates unique email and CNIC per doctor
+- Initializes patient account
+
+**Required Fields:**
+- full_name
+- phone
+- date_of_birth
+- gender
+- cnic
+
+**Use case:** Doctor creates new patient profile
+    """,
+)
 def create_patient(
     *,
     session: SessionDep,
@@ -155,7 +248,24 @@ def create_patient(
     return patient
 
 
-@router.put("/{patient_id}", response_model=PatientPublic)
+@doctor_router.put(
+    "/{patient_id}",
+    response_model=PatientPublic,
+    summary="Update patient",
+    description="""
+🔐 **Authentication Required:** DoctorOAuth2
+
+This endpoint is accessible to doctors only.
+
+**Functionality:**
+- Update patient information
+- Only doctors can update their own patients
+- Validates unique CNIC and email
+- Supports partial updates
+
+**Use case:** Doctor updates patient details
+    """,
+)
 def update_patient(
     *,
     session: SessionDep,
@@ -214,7 +324,24 @@ def update_patient(
     return patient
 
 
-@router.delete("/{patient_id}")
+@doctor_router.delete(
+    "/{patient_id}",
+    summary="Delete patient",
+    description="""
+🔐 **Authentication Required:** DoctorOAuth2
+
+This endpoint is accessible to doctors only.
+
+**Functionality:**
+- Delete a patient record permanently
+- Only doctors can delete their own patients
+- Cascading delete removes related data (appointments, cases, etc.)
+
+⚠️ **Warning:** This action cannot be undone
+
+**Use case:** Doctor removes a patient from system
+    """,
+)
 def delete_patient(
     session: SessionDep,
     current_user: CurrentUser,
@@ -239,7 +366,22 @@ def delete_patient(
     return Message(message="Patient deleted successfully")
 
 
-@router.get("/{patient_id}/stats")
+@doctor_router.get(
+    "/{patient_id}/stats",
+    summary="Get patient statistics",
+    description="""
+🔐 **Authentication Required:** DoctorOAuth2
+
+This endpoint is accessible to doctors only.
+
+**Functionality:**
+- Get statistics about a patient
+- Includes: case count, appointment count, medical history summary
+- Only doctors can view their own patients' stats
+
+**Use case:** Doctor views patient analytics dashboard
+    """,
+)
 def get_patient_stats(
     session: SessionDep,
     current_user: CurrentUser,
@@ -289,20 +431,34 @@ def get_patient_stats(
 
 
 # ============================================================================
-# PROTECTED PATIENT ENDPOINTS - For authenticated patients only
+# PATIENT ENDPOINTS - For authenticated patients accessing their own data
+# Authentication: Bearer JWT (Patient Token)
 # ============================================================================
 
-from datetime import date
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import and_
-from core.security import get_password_hash, verify_password
-from models.appointments_model import AppointmentStatus, AppointmentPublic
+from datetime import timedelta
 
+@patient_router.get(
+    "/me",
+    response_model=PatientPublic,
+    summary="Get patient profile",
+    description="""
+🔐 **Authentication Required:** PatientBearer
 
-@router.get("/me", response_model=PatientPublic)
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- Retrieve your own patient profile
+- Returns complete profile including personal, medical, and doctor info
+- Auto-populated with current patient's data
+
+**Returns:** Patient profile object
+
+**Use case:** Patient views their profile on dashboard
+    """,
+)
 def get_patient_profile(
     session: SessionDep,
-    current_user: CurrentUser
+    current_user: CurrentPatient
 ) -> Any:
     """
     Get authenticated patient's profile information
@@ -317,28 +473,39 @@ def get_patient_profile(
     
     **Use case:** Patient views their profile on dashboard
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
-    
-    # Verify patient is active
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=403,
-            detail="Your patient account is inactive"
-        )
-    
+    # current_user is already a validated Patient object
     return current_user
 
 
-@router.patch("/me/update", response_model=PatientPublic)
+@patient_router.patch(
+    "/me/update",
+    response_model=PatientPublic,
+    summary="Update your profile",
+    description="""
+🔐 **Authentication Required:** PatientBearer
+
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- Update your own patient profile
+- Supports selective field updates
+- Protects critical fields (phone, doctor, gender)
+
+**Updatable Fields:**
+- full_name, cnic, email, phone_secondary
+- date_of_birth, residential_address, postal_address
+- city, occupation, medical_history
+- drug_allergies, family_history, current_medications, notes
+
+**Protected Fields:** phone, doctor_id, gender (contact support)
+
+**Use case:** Patient updates profile information
+    """,
+)
 def update_patient_profile(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPatient,
     patient_update: PatientUpdate
 ) -> Any:
     """
@@ -369,20 +536,6 @@ def update_patient_profile(
     
     **Use case:** Patient updates profile info like address, medical history, CNIC
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
-    
-    # Verify patient is active
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=403,
-            detail="Your patient account is inactive"
-        )
-    
     # Prevent updating protected fields
     update_dict = patient_update.model_dump(exclude_unset=True)
     
@@ -416,13 +569,33 @@ def update_patient_profile(
     return current_user
 
 
-@router.patch("/me/password")
+@patient_router.patch(
+    "/me/password",
+    summary="Update your password",
+    description="""
+🔐 **Authentication Required:** PatientBearer
+
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- Change your login password securely
+- Current password must match existing password
+- New password minimum 6 characters
+
+**Security:**
+- Uses bcrypt hashing (Argon2)
+- Current password required for verification
+- Cannot reuse current password
+
+**Use case:** Patient changes their login password
+    """,
+)
 def update_patient_password(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
-    current_password: str = Query(..., description="Current password (phone number)"),
-    new_password: str = Query(..., min_length=6, description="New password")
+    current_user: CurrentPatient,
+    current_password: str = Query(..., description="Current password (phone number initially)"),
+    new_password: str = Query(..., min_length=6, description="New password (min 6 chars)")
 ) -> Message:
     """
     Update patient's password
@@ -436,12 +609,6 @@ def update_patient_password(
     
     **Use case:** Patient changes their login password
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
     
     # Verify current password
     if not verify_password(current_password, current_user.hashed_password):
@@ -465,10 +632,32 @@ def update_patient_password(
     return Message(message="Password updated successfully")
 
 
-@router.get("/me/appointments", response_model=list[AppointmentPublic])
+@patient_router.get(
+    "/me/appointments",
+    response_model=list[AppointmentPublic],
+    summary="Get your appointments",
+    description="""
+🔐 **Authentication Required:** PatientBearer
+
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- List all your appointments (past and future)
+- Filter by status (pending, confirmed, completed, cancelled)
+- Sorted by date
+
+**Status Options:**
+- pending: Awaiting confirmation
+- confirmed: Confirmed appointment
+- completed: Appointment completed
+- cancelled: Appointment cancelled
+
+**Use case:** Patient views all their appointments
+    """,
+)
 def get_patient_appointments(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPatient,
     status: Optional[AppointmentStatus] = Query(None, description="Filter by status"),
     from_date: Optional[date] = Query(None, description="From date (YYYY-MM-DD)"),
     to_date: Optional[date] = Query(None, description="To date (YYYY-MM-DD)"),
@@ -496,19 +685,6 @@ def get_patient_appointments(
     - `/patients/me/appointments?status=SCHEDULED` - Upcoming appointments
     - `/patients/me/appointments?from_date=2026-01-25&to_date=2026-02-25` - This month
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
-    
-    # Verify patient is active
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=403,
-            detail="Your patient account is inactive"
-        )
     
     # Build query
     query = select(Appointment).where(
@@ -549,10 +725,29 @@ def get_patient_appointments(
     return response_appointments
 
 
-@router.get("/me/appointments/upcoming")
+@patient_router.get(
+    "/me/appointments/upcoming",
+    summary="Get upcoming appointments",
+    description="""
+🔐 **Authentication Required:** PatientBearer
+
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- Get your upcoming appointments
+- Filter for next N days (default 30)
+- Only scheduled and confirmed appointments
+- Sorted by date
+
+**Query Parameters:**
+- days: Number of days ahead to check (1-365, default 30)
+
+**Use case:** Patient sees upcoming appointments on dashboard
+    """,
+)
 def get_upcoming_patient_appointments(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPatient,
     days: int = Query(30, ge=1, le=365, description="Days ahead to check")
 ) -> Any:
     """
@@ -570,19 +765,6 @@ def get_upcoming_patient_appointments(
     - `/patients/me/appointments/upcoming` - Next 30 days
     - `/patients/me/appointments/upcoming?days=7` - Next 7 days
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
-    
-    # Verify patient is active
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=403,
-            detail="Your patient account is inactive"
-        )
     
     today = date.today()
     # Simple date calculation
@@ -637,10 +819,26 @@ def get_upcoming_patient_appointments(
     }
 
 
-@router.get("/me/appointments/{appointment_id}", response_model=AppointmentPublic)
+@patient_router.get(
+    "/me/appointments/{appointment_id}",
+    response_model=AppointmentPublic,
+    summary="Get appointment details",
+    description="""
+🔐 **Authentication Required:** PatientBearer
+
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- Get details of a specific appointment
+- Only your own appointments visible
+- Returns full appointment information
+
+**Use case:** Patient views appointment details
+    """,
+)
 def get_patient_appointment_detail(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPatient,
     appointment_id: uuid.UUID
 ) -> Any:
     """
@@ -656,12 +854,6 @@ def get_patient_appointment_detail(
     
     **Use case:** Patient views appointment details before attending
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
     
     # Get appointment
     appointment = session.get(Appointment, appointment_id)
@@ -683,10 +875,29 @@ def get_patient_appointment_detail(
     return AppointmentPublic(**appt_dict)
 
 
-@router.post("/me/appointments/{appointment_id}/cancel")
+@patient_router.post(
+    "/me/appointments/{appointment_id}/cancel",
+    summary="Cancel appointment",
+    description="""
+🔐 **Authentication Required:** PatientBearer
+
+This endpoint is accessible to authenticated patients only.
+
+**Functionality:**
+- Cancel one of your appointments
+- Only your own appointments can be cancelled
+- Appointment status changed to "cancelled"
+
+**Restrictions:**
+- Cannot cancel appointments that are already completed or cancelled
+- Doctor may need to approve cancellation (based on clinic policy)
+
+**Use case:** Patient cancels an appointment
+    """,
+)
 def cancel_patient_appointment(
     session: SessionDep,
-    current_user: CurrentUser,
+    current_user: CurrentPatient,
     appointment_id: uuid.UUID,
     reason: Optional[str] = Query(None, description="Reason for cancellation")
 ) -> Message:
@@ -701,12 +912,6 @@ def cancel_patient_appointment(
     
     **Use case:** Patient cancels appointment online
     """
-    # Verify this is a patient record
-    if not isinstance(current_user, Patient):
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is for patients only"
-        )
     
     # Get appointment
     appointment = session.get(Appointment, appointment_id)
@@ -736,3 +941,13 @@ def cancel_patient_appointment(
     session.commit()
     
     return Message(message=f"Appointment cancelled successfully")
+
+
+# ============================================================================
+# EXPORT ROUTERS
+# ============================================================================
+# Include both doctor and patient routers so they serve from /patients prefix
+# IMPORTANT: Include patient_router FIRST so patient endpoints have priority
+# when path names overlap (e.g., /patients/me for both doctor and patient)
+router.include_router(patient_router)
+router.include_router(doctor_router)

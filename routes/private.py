@@ -9,7 +9,7 @@ from core.security import get_password_hash
 from models.users_model import User, UserPublic
 from models.private_model import PrivateUserCreate, PrivateUserUpdate
 
-router = APIRouter(tags=["private"], prefix="/private")
+router = APIRouter(tags=["🔐 Private"], prefix="/private")
 
 
 @router.post("/users/", response_model=UserPublic)

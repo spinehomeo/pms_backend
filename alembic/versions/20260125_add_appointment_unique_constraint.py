@@ -17,8 +17,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = "20260125_add_appointment_unique_constraint"
-down_revision: Union[str, Sequence[str], None] = "fe5393294599"
+revision: str = "20260125_appt_unique"
+down_revision: Union[str, Sequence[str], None] = "20260124_email_optional"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -26,10 +26,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """
     Add UNIQUE constraint on (doctor_id, appointment_date, appointment_time)
-    where status != 'cancelled'
+    to prevent double booking
     
-    This prevents two appointments from being scheduled for the same time slot,
-    effectively preventing double-booking at the database level.
+    Note: Using partial index with WHERE clause requires proper enum casting.
+    For now, creating simple unique constraint and relying on application-level
+    logic to handle cancelled appointments via IntegrityError handling.
     """
     op.create_index(
         "idx_appointment_no_double_booking",
@@ -40,7 +41,6 @@ def upgrade() -> None:
             "appointment_time",
         ],
         unique=True,
-        postgresql_where=sa.text("status != 'cancelled'"),
     )
 
 

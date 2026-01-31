@@ -17,7 +17,7 @@ from models.doctor_availability_model import DoctorAvailability, DayOfWeek
 from models.patients_model import Patient
 from models.login_model import Message
 
-router = APIRouter(prefix="/appointments", tags=["appointments"])
+router = APIRouter(prefix="/appointments", tags=["📅 Appointments"])
 
 
 def _get_day_of_week_name(date_obj: date) -> str:

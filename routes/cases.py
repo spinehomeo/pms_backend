@@ -16,7 +16,7 @@ from models.appointments_model import Appointment
 from models.prescriptions_model import Prescription
 from models.login_model import Message
 
-router = APIRouter(prefix="/cases", tags=["cases"])
+router = APIRouter(prefix="/cases", tags=["📋 Cases"])
 
 
 def generate_case_number(doctor_id: uuid.UUID, case_date: date, session: SessionDep) -> str:

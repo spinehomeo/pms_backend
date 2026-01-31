@@ -18,7 +18,7 @@ from models.medicines_model import DoctorMedicineStock, MedicineUsageLog, Medici
 
 from models.login_model import Message
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["📊 Reports"])
 
 
 @router.get("/patient-history/{patient_id}")

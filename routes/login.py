@@ -33,7 +33,7 @@ from utils.utils import (
     generate_email_verification_email,
 )
 
-router = APIRouter(tags=["login"])
+router = APIRouter(tags=["🔑 Authentication"])
 
 # Basic limiter for auth endpoints (requires slowapi in the environment)
 limiter = Limiter(key_func=get_remote_address)
@@ -74,7 +74,7 @@ def login_access_token(
     )
 
 
-@router.post("/login", response_model=LoginResponse, tags=["login-doctor"])
+@router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 def login(
     request: Request, session: SessionDep, login_data: LoginRequest
@@ -198,7 +198,7 @@ def login(
 #     )
 
 
-@router.post("/login/patient-simple", response_model=PatientLoginResponse, tags=["login-patient"])
+@router.post("/login/patient-simple", response_model=PatientLoginResponse)
 @limiter.limit("5/minute")
 def login_patient_simple(
     request: Request, session: SessionDep, login_data: PatientLoginSimple

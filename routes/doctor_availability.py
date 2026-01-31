@@ -23,7 +23,7 @@ from models.appointments_model import Appointment, AppointmentStatus
 from models.patients_model import Patient
 from models.login_model import Message
 
-router = APIRouter(prefix="/doctor_availability", tags=["doctor_availability"])
+router = APIRouter(prefix="/doctor_availability", tags=["⏰ Doctor Availability"])
 
 
 # ========== CREATE OPERATIONS ==========
