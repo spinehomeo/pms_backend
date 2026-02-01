@@ -1,7 +1,7 @@
 # api/routes/appointments.py
 import uuid
 from typing import Any, List, Optional
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Path

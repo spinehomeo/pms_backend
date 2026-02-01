@@ -185,8 +185,77 @@ ADMIN ONLY          █████░░░░░░░░░░░░░░░
 ### Doctor Daily Routine
 ```
 1. POST /login/access-token            (Login)
+{
+  "email": "doctor@homoeomed.com",
+  "password": "Doctor@123",
+  "remember_me": false
+}
+2.Set schedule
+3.http://localhost:8000/doctor_availability/bulk
+{
+  "availability_slots": [
+    {
+      "day_of_week": "monday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    },
+    {
+      "day_of_week": "tuesday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    },
+    {
+      "day_of_week": "wednesday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    },
+    {
+      "day_of_week": "thursday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    },
+    {
+      "day_of_week": "friday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    },
+    {
+      "day_of_week": "saturday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    },
+    {
+      "day_of_week": "sunday",
+      "start_time": "20:00:00Z",
+      "end_time": "22:00:00Z",
+      "is_available": true,
+      "max_patients_per_slot": 1,
+      "notes": "Evening availability"
+    }
+  ]
+}
 2. GET  /availability/my-schedule      (Check schedule)
+
 3. GET  /appointments/today            (Today's patients)
+
 4. GET  /patients/{id}                 (Patient details)
 5. POST /prescriptions/doctor/         (Write prescription)
 6. POST /follow-ups/                   (Schedule follow-up)

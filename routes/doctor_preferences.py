@@ -1,12 +1,13 @@
 # api/routes/doctor_preferences.py
 import uuid
 from typing import Any, List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select, func
 
 from api.deps import CurrentUser, SessionDep
+from utils.time import utc_now
 from models.doctor_preferences_model import (
     DoctorCaseFieldPreference,
     STANDARD_FIELDS
@@ -48,7 +49,7 @@ def initialize_standard_fields(
             is_required=field_def["default_required"],
             is_enabled=True,
             position=i,
-            created_at=datetime.now()
+            created_at=utc_now()
         )
         session.add(preference)
     
@@ -137,11 +138,11 @@ def toggle_field(
             is_required=field_def["default_required"],
             is_enabled=enabled,
             position=max_position + 1,
-            created_at=datetime.now()
+            created_at=utc_now()
         )
     else:
         preference.is_enabled = enabled
-        preference.updated_at = datetime.now()
+        preference.updated_at = utc_now()
     
     session.add(preference)
     session.commit()
@@ -197,7 +198,7 @@ def add_custom_field(
         is_required=is_required,
         is_enabled=True,
         position=max_position + 1,
-        created_at=datetime.now()
+        created_at=utc_now()
     )
     
     session.add(preference)

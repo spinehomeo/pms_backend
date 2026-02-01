@@ -23,7 +23,7 @@ from sqlmodel import Session, select, text
 from core.db import engine
 from models.users_model import User
 from models.doctor_preferences_model import DoctorCaseFieldPreference, STANDARD_FIELDS
-from datetime import datetime
+from utils.time import utc_now
 
 
 def backup_old_fields():
@@ -222,7 +222,7 @@ def initialize_doctor_preferences():
                         is_required=field_def["default_required"],
                         is_enabled=True,
                         position=i,
-                        created_at=datetime.now()
+                        created_at=utc_now()
                     )
                     session.add(preference)
                 

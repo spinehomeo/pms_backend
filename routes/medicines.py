@@ -1,12 +1,13 @@
 # api/routes/medicines.py
 import uuid
 from typing import Any, List, Optional
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import func, select, and_
 
 from api.deps import CurrentUser, SessionDep
+from utils.time import utc_isoformat
 from models.medicines_model import (
     MedicineMaster, DoctorMedicineStock, DoctorMedicineStockCreate, 
     DoctorMedicineStockUpdate, DoctorMedicineStockPublic, MedicinesStockPublic,
@@ -365,7 +366,7 @@ def get_low_stock_alerts(
     return {
         "count": len(low_stock_items),
         "items": low_stock_items,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": utc_isoformat()
     }
 
 
@@ -404,5 +405,5 @@ def get_expiring_medicines(
         "count": len(expiring_items),
         "items": expiring_items,
         "expiry_threshold": expiry_threshold.isoformat(),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": utc_isoformat()
     }

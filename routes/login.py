@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -8,6 +8,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from utils import crud
+from utils.time import utc_now, utc_today
 from api.deps import CurrentUser, SessionDep, get_current_active_superuser
 from core import security
 from core.config import settings
@@ -63,7 +64,7 @@ def login_access_token(
     )
     
     # Update last login
-    user.last_login = datetime.now().date()
+    user.last_login = utc_today()
     session.add(user)
     session.commit()
     
@@ -115,7 +116,7 @@ def login(
     )
     
     # Update last login
-    user.last_login = datetime.now().date()
+    user.last_login = utc_today()
     session.add(user)
     session.commit()
     
@@ -258,7 +259,7 @@ def login_patient_simple(
     )
     
     # Update last login
-    patient.last_login = datetime.now().date()
+    patient.last_login = utc_today()
     session.add(patient)
     session.commit()
     
@@ -407,7 +408,7 @@ def get_session_info(current_user: CurrentUser) -> SessionInfo:
         full_name=current_user.full_name,
         role=current_user.role,
         last_login=current_user.last_login,
-        session_start=datetime.now()
+        session_start=utc_now()
     )
 
 

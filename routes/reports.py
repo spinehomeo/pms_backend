@@ -1,13 +1,14 @@
 # api/routes/reports.py
 import uuid
 from typing import Any, List, Optional
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import func, select, and_, desc, asc
 
 from api.deps import CurrentUser, SessionDep
+from utils.time import utc_isoformat
 
 from models.patients_model import Patient
 from models.cases_model import PatientCase
@@ -147,7 +148,7 @@ def get_patient_history(
             "appointments": appointments,
             "followups": followups
         },
-        "generated_at": datetime.now().isoformat()
+        "generated_at": utc_isoformat()
     }
 
 
@@ -269,7 +270,7 @@ def get_medicine_usage_report(
         },
         "detailed_data": detailed,
         "trend_data": trend_data,
-        "generated_at": datetime.now().isoformat()
+        "generated_at": utc_isoformat()
     }
 
 
@@ -430,7 +431,7 @@ def get_appointment_statistics(
             "weekday": weekday_distribution
         },
         "trend_data": trend_data,
-        "generated_at": datetime.now().isoformat()
+        "generated_at": utc_isoformat()
     }
 
 
@@ -530,7 +531,7 @@ def get_prescription_analysis(
         "trends": {
             "monthly": [{"month": k, "count": v} for k, v in sorted(monthly_map.items())]
         },
-        "generated_at": datetime.now().isoformat()
+        "generated_at": utc_isoformat()
     }
 
 
@@ -599,7 +600,7 @@ def get_financial_summary(
             "completed_appointments": len(appointments),
             "average_daily_revenue": total_revenue / max((to_date - from_date).days, 1)
         },
-        "generated_at": datetime.now().isoformat()
+        "generated_at": utc_isoformat()
     }
 
 
@@ -683,5 +684,5 @@ def get_expiry_alerts_report(
             "Check for alternative medicines if needed",
             "Consider discounting or special promotions for near-expiry stock"
         ],
-        "generated_at": datetime.now().isoformat()
+        "generated_at": utc_isoformat()
     }

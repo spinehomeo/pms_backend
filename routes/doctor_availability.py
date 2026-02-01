@@ -1,7 +1,7 @@
 # routes/doctor_availability.py
 import uuid
 from typing import Any, List, Optional
-from datetime import date, time, datetime, timedelta
+from datetime import date, time, datetime, timedelta, timezone
 from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query, Path
@@ -62,8 +62,12 @@ def create_doctor_availability(
     
     for slot in existing_slots:
         # Check if new slot overlaps with existing slot
-        if (availability_in.start_time < slot.end_time and 
-            availability_in.end_time > slot.start_time):
+        # Convert to naive time if needed for comparison
+        start_time = availability_in.start_time.replace(tzinfo=None) if hasattr(availability_in.start_time, 'tzinfo') and availability_in.start_time.tzinfo else availability_in.start_time
+        end_time = availability_in.end_time.replace(tzinfo=None) if hasattr(availability_in.end_time, 'tzinfo') and availability_in.end_time.tzinfo else availability_in.end_time
+        
+        if (start_time < slot.end_time and 
+            end_time > slot.start_time):
             raise HTTPException(
                 status_code=409,
                 detail=f"Time slot overlaps with existing slot: {slot.start_time.strftime('%H:%M')} - {slot.end_time.strftime('%H:%M')}"
@@ -117,8 +121,12 @@ def create_doctor_availability_bulk(
         
         overlap_found = False
         for slot in existing_slots:
-            if (availability_in.start_time < slot.end_time and 
-                availability_in.end_time > slot.start_time):
+            # Convert to naive time if needed for comparison
+            start_time = availability_in.start_time.replace(tzinfo=None) if hasattr(availability_in.start_time, 'tzinfo') and availability_in.start_time.tzinfo else availability_in.start_time
+            end_time = availability_in.end_time.replace(tzinfo=None) if hasattr(availability_in.end_time, 'tzinfo') and availability_in.end_time.tzinfo else availability_in.end_time
+            
+            if (start_time < slot.end_time and 
+                end_time > slot.start_time):
                 overlap_found = True
                 break
         
@@ -376,8 +384,12 @@ def update_doctor_availability(
         ).all()
         
         for existing_slot in existing_slots:
-            if (new_start < existing_slot.end_time and 
-                new_end > existing_slot.start_time):
+            # Convert to naive time if needed for comparison
+            start = new_start.replace(tzinfo=None) if hasattr(new_start, 'tzinfo') and new_start.tzinfo else new_start
+            end = new_end.replace(tzinfo=None) if hasattr(new_end, 'tzinfo') and new_end.tzinfo else new_end
+            
+            if (start < existing_slot.end_time and 
+                end > existing_slot.start_time):
                 raise HTTPException(
                     status_code=409,
                     detail=f"Updated time slot overlaps with existing slot: {existing_slot.start_time.strftime('%H:%M')} - {existing_slot.end_time.strftime('%H:%M')}"

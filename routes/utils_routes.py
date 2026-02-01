@@ -11,6 +11,7 @@ from utils.utils import (
     send_email, 
     generate_email_verification_token
 )
+from utils.time import utc_isoformat
 
 router = APIRouter(prefix="/utils", tags=["🛠️ Utilities"])
 
@@ -60,10 +61,9 @@ async def health_check() -> dict[str, Any]:
     """
     Health check endpoint.
     """
-    from datetime import datetime
     return {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": utc_isoformat(),
         "service": "HomoeoMed API"
     }
 
@@ -75,12 +75,12 @@ async def system_info(current_user: Any = Depends(get_current_active_superuser))
     """
     import platform
     import sys
-    from datetime import datetime
+    from core.config import settings
     
     return {
         "system": platform.system(),
         "python_version": sys.version,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": utc_isoformat(),
         "api_version": "1.0.0",
         "environment": "production" if not settings.DEBUG else "development"
     }
