@@ -169,6 +169,41 @@ def require_staff_role(
     return current_user
 
 
+def require_roles(*allowed_roles: str):
+    """
+    Factory function to create a role-checking dependency.
+    
+    Allows specifying multiple acceptable roles in a single dependency.
+    
+    Usage:
+        @router.get("/endpoint")
+        def my_endpoint(
+            current_user: User = Depends(require_roles("doctor", "staff", "admin"))
+        ):
+            return current_user
+    
+    Args:
+        *allowed_roles: One or more role strings (e.g., "admin", "doctor", "staff")
+        
+    Returns:
+        A dependency function that checks if current_user.role is in allowed_roles
+        
+    Raises:
+        HTTPException(403): User's role not in allowed_roles
+    """
+    def role_checker(
+        current_user: User = Security(get_current_user)
+    ) -> User:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail="The user doesn't have enough privileges"
+            )
+        return current_user
+    
+    return role_checker
+
+
 
 # ============================================================================
 # PATIENT AUTHENTICATION (JWT Bearer)

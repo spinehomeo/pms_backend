@@ -1,8 +1,8 @@
-"""add audit_log model
+"""approve all existing doctors
 
-Revision ID: 72b5e3eba95c
-Revises: 46da6b8459ca
-Create Date: 2026-01-02 22:39:37.812152
+Revision ID: 187fa5974688
+Revises: d89e53a0cd12
+Create Date: 2026-02-06 00:31:42.110340
 
 """
 from typing import Sequence, Union
@@ -12,20 +12,17 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '72b5e3eba95c'
-down_revision: Union[str, Sequence[str], None] = '46da6b8459ca'
+revision: str = '187fa5974688'
+down_revision: Union[str, Sequence[str], None] = 'd89e53a0cd12'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # This migration is deprecated/duplicated - no schema changes
     pass
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    # This migration is deprecated/duplicated - no schema changes
     pass
-

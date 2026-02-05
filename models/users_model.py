@@ -27,6 +27,8 @@ class UserBase(SQLModel):
     consultation_fee: Optional[float] = Field(default=None, ge=0)
     is_active: bool = Field(default=True)
     is_verified: bool = Field(default=True)
+    is_approved: bool = Field(default=False)  # NEW: Admin approval for doctors
+    rejection_reason: Optional[str] = Field(default=None, max_length=500)  # NEW: Store rejection reason
     is_superuser: bool = Field(default=False)
     join_date: date = Field(default_factory=date.today)
     last_login: Optional[date] = Field(default=None)
@@ -73,11 +75,22 @@ class UserCreate(SQLModel):
 
 
 class UserRegister(SQLModel):
-    """API INPUT MODEL for user registration"""
+    """API INPUT MODEL for user registration
+    
+    Doctors and Staff both require admin approval.
+    Doctors provide medical credentials upfront.
+    """
     email: EmailStr = Field(max_length=255)
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(max_length=255)
     phone: Optional[str] = Field(default=None, max_length=20)
+    # NEW: Role selection (doctor or staff)
+    role: UserRole = Field(default=UserRole.DOCTOR, description="Account type: doctor or staff")
+    # NEW: Doctor-only verification fields
+    registration_number: Optional[str] = Field(default=None, max_length=100, description="Medical license/registration number (required for doctors)")
+    specialization: Optional[str] = Field(default=None, max_length=255, description="Medical specialization (for doctors)")
+    clinic_name: Optional[str] = Field(default=None, max_length=255, description="Practice/clinic name (for doctors)")
+    clinic_address: Optional[str] = Field(default=None, description="Practice/clinic address (for doctors)")
 
 
 class UserUpdate(SQLModel):
@@ -131,6 +144,30 @@ class DoctorStats(SQLModel):
     total_prescriptions: int = 0
     upcoming_appointments: int = 0
     pending_followups: int = 0
+
+
+# ========== APPROVAL WORKFLOW MODELS ==========
+class ApprovalRequest(SQLModel):
+    """API INPUT MODEL for approving/rejecting users"""
+    action: str = Field(description="'approve' or 'reject'")
+    reason: Optional[str] = Field(default=None, max_length=500, description="Rejection reason (required if action=reject)")
+
+
+class ApprovalResponse(SQLModel):
+    """API OUTPUT MODEL for approval action result"""
+    success: bool
+    message: str
+    user: UserPublic
+
+
+class ApprovalStats(SQLModel):
+    """API OUTPUT MODEL for dashboard statistics"""
+    total_pending: int
+    pending_doctors: int
+    pending_staff: int
+    pending_unverified_email: int
+    approved_today: int
+    rejected_today: int
     low_stock_items: int = 0
     revenue_today: float = 0.0
     revenue_this_month: float = 0.0

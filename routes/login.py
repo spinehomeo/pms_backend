@@ -57,6 +57,12 @@ def login_access_token(
         raise HTTPException(status_code=400, detail="Inactive user")
     elif not user.is_verified:
         raise HTTPException(status_code=400, detail="Email not verified")
+    # Check approval status for doctors and staff
+    elif user.role in ["doctor", "staff"] and not user.is_approved:
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is pending admin approval. You'll receive an email when approved."
+        )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
@@ -84,7 +90,7 @@ def login(
     Doctor/Staff/Admin login with email and password
     
     **Credentials:** Email + Password
-    **Access Level:** Verified doctors, staff, and administrators
+    **Access Level:** Verified and approved doctors, staff, and administrators
     **Response:** Access token + User details (role, specialization, clinic)
     """
     user = crud.authenticate(
@@ -104,6 +110,12 @@ def login(
         raise HTTPException(
             status_code=400,
             detail="Email not verified. Please check your inbox for verification link."
+        )
+    # Check approval status for doctors and staff
+    elif user.role in ["doctor", "staff"] and not user.is_approved:
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is pending admin approval. You'll receive an email when approved."
         )
     
     if login_data.remember_me:

@@ -33,6 +33,91 @@ if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
         traces_sample_rate=1.0,
     )
 
+# ============================================================================
+# OpenAPI Tags Metadata - Role-Based Organization
+# ============================================================================
+# This creates a legend in Swagger that explains the role hierarchy.
+# Tags are organized by access level to make authorization obvious at a glance.
+# ============================================================================
+tags_metadata = [
+    {
+        "name": "🛡️ Admin | User Management",
+        "description": """
+        **Who:** ADMIN only
+
+        System-level user management endpoints. Admins can create, read, update, and delete 
+        any user (doctor, staff, admin). Regular doctors cannot access these endpoints.
+
+        **Authentication:** DoctorOAuth2 (Admin role required)
+        """
+    },
+    {
+        "name": "👤 Self-Service | User Profile",
+        "description": """
+        **Who:** Doctor, Staff, Admin
+
+        Endpoints for authenticated users to manage their own profile. Each user can only 
+        access their own profile (GET /users/me, PATCH /users/me, DELETE /users/me).
+
+        **Authentication:** DoctorOAuth2
+        """
+    },
+    {
+        "name": "👤 Self-Service | Password",
+        "description": """
+        **Who:** Doctor, Staff, Admin
+
+        Password management for authenticated users. Users can only change their own password.
+
+        **Authentication:** DoctorOAuth2
+        """
+    },
+    {
+        "name": "🧑‍⚕️ Doctor | Statistics",
+        "description": """
+        **Who:** Doctor (staff & admin can auth, but endpoint is doctor-specific)
+
+        Doctor-only statistics endpoints. Shows appointments, cases, prescriptions, 
+        medicine stock, and other practice metrics.
+
+        **Authentication:** DoctorOAuth2
+        """
+    },
+    {
+        "name": "📝 Registration | User Signup",
+        "description": """
+        **Who:** Doctor, Staff (public signup)
+
+        User registration endpoint for creating new doctor or staff accounts. 
+        Does NOT create patient accounts.
+
+        **Authentication:** Public (or optional pre-approval)
+        """
+    },
+    {
+        "name": "🧍 Registration | Patient",
+        "description": """
+        **Who:** Frontend, Staff, Public
+
+        Patient registration endpoints. These do NOT create User accounts; they create Patient records.
+        Phone number serves as the patient's password for simple login flows.
+
+        **Authentication:** Public or Staff-authenticated
+        """
+    },
+    {
+        "name": "🩺 Listing | Doctor Directory",
+        "description": """
+        **Who:** Admin, Staff
+
+        Internal doctor listing for dashboards and staff tools. 
+        Public users should use /public/doctors instead.
+
+        **Authentication:** DoctorOAuth2 (Admin or Staff role)
+        """
+    },
+]
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="""
@@ -67,6 +152,7 @@ This API uses **two completely separate authentication systems** for two differe
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    openapi_tags=tags_metadata,
     generate_unique_id_function=custom_generate_unique_id,
     swagger_ui_parameters={"swaggerOptions": {"persistAuthorization": True}},
     swagger_ui_init_oauth={

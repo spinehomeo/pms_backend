@@ -13,6 +13,8 @@ from api.deps import (
     CurrentUser,
     SessionDep,
     get_current_active_superuser,
+    get_current_user,
+    require_roles,
 )
 from core import security
 from core.config import settings
@@ -30,6 +32,9 @@ from models.users_model import (
     UpdatePassword,
     DoctorStats,
     UserRole,
+    ApprovalRequest,
+    ApprovalResponse,
+    ApprovalStats,
 )
 from models.public_models import PatientRegisterPublic, PatientRegisterPhoneOnly, PatientRegisterSimple, PatientQuickAccessResponse
 from utils.utils import (
@@ -40,19 +45,41 @@ from utils.utils import (
 )
 from models.audit_model import AuditLog
 
-# Admin-only router with Security at router level
-# Security() applied once to all endpoints on this router
+# ============================================================================
+# ROUTER SETUP - SPLIT BY AUTHORIZATION LEVEL
+# ============================================================================
+
+# Router for admin-only operations (system-level CRUD)
+# This router has admin-only dependency at router level
+# No prefix here - will be included in main router with prefix
 admin_router = APIRouter(
-    prefix="/users",
-    tags=["👥 User Management"],
     dependencies=[Security(get_current_active_superuser)]
 )
 
+# Router for self-service + public endpoints (no router-level auth)
+# Individual endpoints apply their own dependencies as needed
+# No prefix here - will be included in main router with prefix
+self_service_router = APIRouter()
 
-@admin_router.get("/", response_model=UsersPublic)
+# Main router that combines both (for api/router.py to include)
+# This router has the /users prefix and includes both routers
+router = APIRouter(prefix="/users")
+
+
+@admin_router.get("/", response_model=UsersPublic, tags=["🛡️ Admin | User Management"])
 def read_users(session: SessionDep, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)) -> Any:
     """
-    Retrieve all users (admin only).
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Retrieve all users (doctors, staff, admins) in the system.
+
+    **Query Parameters:**
+    - `skip`: Number of records to skip (default: 0)
+    - `limit`: Number of records to return (default: 100, max: 1000)
+
+    **Response:** List of users with total count
     """
     count_statement = select(func.count()).select_from(User)
     count = session.exec(count_statement).one()
@@ -63,10 +90,24 @@ def read_users(session: SessionDep, skip: int = Query(0, ge=0), limit: int = Que
     return UsersPublic(data=users, count=count)
 
 
-@admin_router.post("/", response_model=UserPublic)
+@admin_router.post("/", response_model=UserPublic, tags=["🛡️ Admin | User Management"])
 def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     """
-    Create new user (admin only).
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Create a new user (doctor, staff, or admin).
+
+    **Required fields:** email, password, full_name, role
+
+    **Role options:** "doctor", "staff", "admin"
+
+    **Behavior:**
+    - Checks if email already exists
+    - Hashes password securely
+    - Sends email verification (if configured)
+    - Logs creation in audit trail
     """
     user = crud.get_user_by_email(session=session, email=user_in.email)
     if user:
@@ -100,16 +141,29 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     return user
 
 
-# Export admin_router as 'router' for api/router.py to include
-router = admin_router
+# ============================================================================
+# SELF-SERVICE ENDPOINTS (Doctor / Staff / Admin - Own Resources)
+# ============================================================================
+# These endpoints are NOT admin-only
+# Individual auth dependencies are applied to each endpoint
 
-
-@router.patch("/me", response_model=UserPublic)
+@self_service_router.patch("/me", response_model=UserPublic, tags=["👤 Self-Service | User Profile"])
 def update_user_me(
     *, session: SessionDep, user_in: UserUpdateMe, current_user: CurrentUser
 ) -> Any:
     """
-    Update own user.
+    👤 **Access:** Doctor, Staff, Admin (own profile only)
+
+    **Authentication:** DoctorOAuth2
+
+    Update the current logged-in user's profile.
+
+    **Allowed fields:** full_name, email
+
+    **Important:**
+    - Users can only update their OWN profile
+    - Email uniqueness is checked across system
+    - Audit log records this change
     """
     if user_in.email:
         existing_user = crud.get_user_by_email(session=session, email=user_in.email)
@@ -126,12 +180,25 @@ def update_user_me(
     return current_user
 
 
-@router.patch("/me/password", response_model=Message)
+@self_service_router.patch("/me/password", response_model=Message, tags=["👤 Self-Service | Password"])
 def update_password_me(
     *, session: SessionDep, body: UpdatePassword, current_user: CurrentUser
 ) -> Any:
     """
-    Update own password.
+    👤 **Access:** Doctor, Staff, Admin (own password only)
+
+    **Authentication:** DoctorOAuth2
+
+    Change the current user's password.
+
+    **Required fields:**
+    - `current_password`: Current password (for verification)
+    - `new_password`: New password (must differ from current)
+
+    **Validation:**
+    - Current password must be correct
+    - New password cannot equal current password
+    - Audit log records this change
     """
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
@@ -157,10 +224,18 @@ def update_password_me(
     return Message(message="Password updated successfully")
 
 
-@router.get("/me", response_model=UserPublic)
+@self_service_router.get("/me", response_model=UserPublic, tags=["👤 Self-Service | User Profile"])
 def read_user_me(current_user: CurrentUser) -> Any:
     """
-    Get current user.
+    👤 **Access:** Doctor, Staff, Admin
+
+    **Authentication:** DoctorOAuth2
+
+    Get the current logged-in user's profile information.
+
+    **Returns:** Full user details (email, name, role, status, etc.)
+
+    **No parameters required** - Uses bearer token from authorization header
     """
     return current_user
 
@@ -192,10 +267,25 @@ def read_user_me(current_user: CurrentUser) -> Any:
 #     return patient
 
 
-@router.get("/me/stats", response_model=DoctorStats)
+@self_service_router.get("/me/stats", response_model=DoctorStats, tags=["🧑‍⚕️ Doctor | Statistics"])
 def get_doctor_stats(session: SessionDep, current_user: CurrentUser) -> Any:
     """
-    Get doctor statistics.
+    🧑‍⚕️ **Access:** Doctor (other roles can authenticate but endpoint is doctor-specific)
+
+    **Authentication:** DoctorOAuth2
+
+    Get dashboard statistics for the current doctor.
+
+    **Returns:**
+    - Total patients assigned to doctor
+    - Total cases handled
+    - Total appointments
+    - Total prescriptions issued
+    - Upcoming appointments (today or future)
+    - Low stock medicine items
+    - Revenue metrics (if enabled)
+
+    **Restrictions:** Only available to users with doctor role
     """
     from sqlmodel import func, select
     from models.patients_model import Patient
@@ -259,10 +349,21 @@ def get_doctor_stats(session: SessionDep, current_user: CurrentUser) -> Any:
     )
 
 
-@router.delete("/me", response_model=Message)
+@self_service_router.delete("/me", response_model=Message, tags=["👤 Self-Service | User Profile"])
 def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
-    Delete own user.
+    👤 **Access:** Doctor, Staff, Admin (own account only)
+
+    **Authentication:** DoctorOAuth2
+
+    Delete the current logged-in user's own account.
+
+    **Restrictions:**
+    - Super users (ADMIN) cannot delete themselves (set safety)
+    - Doctors with assigned patients cannot be deleted (must transfer first)
+    - This action is permanent and logs in audit trail
+
+    **Audit:** Deletion is logged as "delete_self" action
     """
     if current_user.is_superuser:
         raise HTTPException(
@@ -297,10 +398,39 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     return Message(message="User deleted successfully")
 
 
-@router.post("/signup", response_model=UserPublic)
+@self_service_router.post("/signup", response_model=UserPublic, tags=["📝 Registration | User Signup"])
 def register_user(session: SessionDep, user_in: UserRegister) -> Any:
     """
-    Create new user without the need to be logged in.
+    📝 **Access:** Doctor, Staff (public signup)
+
+    **Authentication:** Public (no login required)
+
+    User self-registration endpoint for creating new doctor or staff accounts.
+    BOTH require admin approval.
+
+    **Required fields:**
+    - `email`: Unique email address
+    - `password`: Secure password
+    - `full_name`: User's full name
+    - `role`: Account type ("doctor" or "staff")
+    
+    **Doctor-specific fields (collected for verification):**
+    - `registration_number`: Medical license/registration number
+    - `specialization`: Medical specialization
+    - `clinic_name`: Practice/clinic name
+    - `clinic_address`: Practice/clinic address
+
+    **Workflow:**
+    1. User (doctor or staff) submits signup
+    2. Email verification link sent
+    3. After email verification, account pending admin approval
+    4. Admin reviews and approves
+    5. User can login once approved
+
+    **Account status on signup:**
+    - is_verified: FALSE (pending email confirmation)
+    - is_approved: FALSE (pending admin approval)
+    - is_active: FALSE (can't login until approved)
     """
     user = crud.get_user_by_email(session=session, email=user_in.email)
     if user:
@@ -313,10 +443,25 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
         email=user_in.email,
         password=user_in.password,
         full_name=user_in.full_name,
-        role="doctor"  # Default role for signups is doctor
+        phone=user_in.phone,
+        registration_number=user_in.registration_number if user_in.role == UserRole.DOCTOR else None,
+        specialization=user_in.specialization if user_in.role == UserRole.DOCTOR else None,
+        role=user_in.role  # Use role from user input (doctor or staff)
     )
     
     user = crud.create_user(session=session, user_create=user_create)
+    
+    # Store additional fields (doctor-specific)
+    if user_in.role == UserRole.DOCTOR:
+        user.clinic_name = user_in.clinic_name
+        user.clinic_address = user_in.clinic_address
+    
+    # Both doctors and staff require approval
+    user.is_approved = False  # Requires admin approval
+    user.is_active = False     # Can't login until approved
+    user.is_verified = False   # Email verification required first
+    session.add(user)
+    session.commit()
     
     # Send verification email
     if settings.emails_enabled:
@@ -452,26 +597,34 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
 #     return user
 
 
-@router.post("/patients/register-simple", response_model=PatientPublic)
+@self_service_router.post("/patients/register-simple", response_model=PatientPublic, tags=["🧍 Registration | Patient"])
 def register_patient_simple(
     session: SessionDep, 
     patient_in: PatientRegisterSimple
 ) -> Any:
     """
-    Simplified patient registration - name, gender, phone, and doctor selection
-    
-    **Required fields:** full_name, gender, phone, doctor_id
-    **No password required** - Phone number becomes the password for login
-    **No email verification required**
-    **Patient can login with phone + password directly (no User table entry)**
-    
-    Creates a patient record directly assigned to the selected doctor.
-    
-    **Flow:**
-    1. Patient selects doctor from main website
-    2. Frontend passes doctor UUID
-    3. Patient registers with name, gender, and phone
-    4. Patient is automatically assigned to selected doctor
+    🧍 **Access:** Frontend, Staff, Public
+
+    **Authentication:** Public (no login required)
+
+    Simplified patient registration with name, gender, phone, and doctor selection.
+
+    **Required fields:**
+    - `full_name`: Patient's full name
+    - `gender`: Patient's gender (MALE, FEMALE, OTHER)
+    - `phone`: Phone number (becomes the login password)
+    - `doctor_id`: UUID of the doctor to assign
+
+    **Important:**
+    - **This does NOT create a User account** - it creates a Patient record only
+    - Phone number automatically becomes the patient's password
+    - No email required - phone-only authentication
+    - Patient is immediately assigned to selected doctor
+    - No email verification needed
+
+    **Use case:** Website "Find a Doctor" → Patient selects doctor → Registration → Immediate access to book appointment
+
+    **Duplicate handling:** If patient with same phone exists for this doctor, returns 400 error
     """
     # First verify that the doctor exists and is active
     doctor = session.get(User, patient_in.doctor_id)
@@ -570,28 +723,43 @@ def register_patient_simple(
     return patient
 
 
-@router.post("/patients/quick-access", response_model=PatientQuickAccessResponse)
+@self_service_router.post("/patients/quick-access", response_model=PatientQuickAccessResponse, tags=["🧍 Registration | Patient"])
 def quick_access_patient(
     session: SessionDep,
     patient_in: PatientRegisterSimple
 ) -> Any:
     """
-    Quick access endpoint for online appointment booking
-    
-    Combines patient registration and login in a single API call.
-    Perfect for appointment booking flow where patient needs immediate access.
-    
-    **Required fields:** full_name, gender, phone, doctor_id
-    **Returns:** Access token + Patient details
-    **Use case:** Patient selects doctor → Fills details → Gets instant token → Can book appointment
-    
+    🧍 **Access:** Frontend, Public (combined register + login)
+
+    **Authentication:** Public (no login required)
+
+    Quick access endpoint combining patient registration and instant login.
+
+    **Required fields:**
+    - `full_name`: Patient's full name
+    - `gender`: Patient's gender (MALE, FEMALE, OTHER)
+    - `phone`: Phone number (becomes login password)
+    - `doctor_id`: UUID of the doctor to assign
+
+    **Returns:** Access token + patient details (all in one request)
+
+    **Perfect for:**
+    - Online appointment booking flows
+    - Patient quick access without separate login step
+    - Mobile app registration workflows
+
     **Flow:**
-    1. Patient selects doctor from main website
-    2. Patient fills name, gender, phone (+ problem description for appointment)
-    3. Endpoint registers patient with selected doctor and returns access token
-    4. Patient can immediately use token to book appointment or view profile
-    
-    **Benefits:** Only 2 API calls instead of 4 (register + login + book appointment)
+    1. Patient selects doctor
+    2. Patient enters name, gender, phone
+    3. Endpoint registers + generates access token
+    4. Patient immediately has authenticated session
+    5. Frontend redirects to booking or profile page
+
+    **Duplicate handling:**
+    - If patient with this phone + doctor exists → generates new token, does NOT create duplicate
+    - Ensures idempotency for mobile/flaky connections
+
+    **This does NOT create a User account** - only Patient record + JWT token
     """
     # Verify that the doctor exists and is active
     doctor = session.get(User, patient_in.doctor_id)
@@ -730,12 +898,26 @@ def quick_access_patient(
     )
 
 
-@router.get("/{user_id}", response_model=UserPublic)
+@admin_router.get("/{user_id}", response_model=UserPublic, tags=["🛡️ Admin | User Management"])
 def read_user_by_id(
     user_id: uuid.UUID = Path(..., description="User UUID"), session: SessionDep = None, current_user: CurrentUser = None
 ) -> Any:
     """
-    Get a specific user by id.
+    🔐 **Access:** ADMIN only (or user viewing their own profile)
+
+    **Authentication:** DoctorOAuth2
+
+    Get a specific user by ID.
+
+    **Path parameters:**
+    - `user_id`: UUID of the user to retrieve
+
+    **Behavior:**
+    - If user is viewing their own profile (ID matches current user) → allowed
+    - If user is ADMIN → allowed to view any user
+    - Otherwise → 403 Forbidden
+
+    **Returns:** Full user details including role, email, status, etc.
     """
     user = session.get(User, user_id)
     if not user:
@@ -753,9 +935,9 @@ def read_user_by_id(
     return user
 
 
-@router.patch(
+@admin_router.patch(
     "/{user_id}",
-    dependencies=[Depends(get_current_active_superuser)],
+    tags=["🛡️ Admin | User Management"],
     response_model=UserPublic,
 )
 def update_user(
@@ -765,7 +947,27 @@ def update_user(
     user_in: UserUpdate,
 ) -> Any:
     """
-    Update a user.
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Update any user's information (admin only).
+
+    **Path parameters:**
+    - `user_id`: UUID of the user to update
+
+    **Allowed fields:** full_name, email, is_active, role, phone
+
+    **Behavior:**
+    - Admin can update any user account
+    - Email uniqueness checked before update
+    - Role can be changed (DOCTOR ↔ STAFF ↔ ADMIN)
+    - Audit log records all changes
+
+    **Restrictions:**
+    - Cannot update password via this endpoint (use dedicated password endpoint)
+    - User must exist (404 if not found)
+    - Email must be unique (409 if duplicate)
     """
     db_user = session.get(User, user_id)
     if not db_user:
@@ -785,12 +987,34 @@ def update_user(
     return db_user
 
 
-@router.delete("/{user_id}", dependencies=[Depends(get_current_active_superuser)])
+@admin_router.delete("/{user_id}", tags=["🛡️ Admin | User Management"])
 def delete_user(
     session: SessionDep, current_user: CurrentUser, user_id: uuid.UUID
 ) -> Message:
     """
-    Delete a user.
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Delete a user from the system (admin only).
+
+    **Path parameters:**
+    - `user_id`: UUID of the user to delete
+
+    **Restrictions:**
+    - Admin cannot delete themselves (safety lock)
+    - Doctors with assigned patients cannot be deleted
+    - Other roles can be deleted if no dependencies exist
+
+    **Behavior:**
+    - Soft or hard delete based on configuration
+    - Associated records may be archived/transferred
+    - Audit log records deletion with admin ID
+
+    **Errors:**
+    - 404: User not found
+    - 403: Trying to delete self
+    - 400: Doctor has dependent patients
     """
     user = session.get(User, user_id)
     if not user:
@@ -833,7 +1057,7 @@ def delete_user(
     return Message(message="User deleted successfully")
 
 
-@router.get("/doctors/list", response_model=UsersPublic)
+@self_service_router.get("/doctors/list", response_model=UsersPublic, tags=["🩺 Listing | Doctor Directory"], dependencies=[Security(require_roles("admin", "staff"))])
 def list_doctors(
     session: SessionDep,
     skip: int = 0,
@@ -841,7 +1065,27 @@ def list_doctors(
     current_user: CurrentUser = None
 ) -> Any:
     """
-    List all doctors.
+    🩺 **Access:** Admin, Staff (internal dashboard use)
+
+    **Authentication:** DoctorOAuth2
+
+    List all active doctors in the system (for staff dashboards, patient assignment, etc.).
+
+    **Query parameters:**
+    - `skip`: Records to skip (default: 0)
+    - `limit`: Records to return (default: 100)
+
+    **Returns:**
+    - List of doctor users with full details
+    - Total count of doctors in system
+
+    **Note:** This is an internal endpoint for staff/admin dashboards.
+    Public users should use `/public/doctors` instead for public doctor search.
+
+    **Difference from admin GET /users/:**
+    - This endpoint filters to doctors only
+    - This endpoint may be accessible to staff (depending on authorization config)
+    - Admin GET /users/ shows ALL user types (doctor, staff, admin)
     """
     count_statement = select(func.count()).where(User.role == "doctor")
     count = session.exec(count_statement).one()
@@ -850,3 +1094,302 @@ def list_doctors(
     doctors = session.exec(statement).all()
 
     return UsersPublic(data=doctors, count=count)
+
+
+# ============================================================================
+# UNIFIED ADMIN APPROVAL ENDPOINTS (DOCTORS & STAFF)
+# ============================================================================
+# Single unified system - replaces redundant doctor-specific endpoints
+#
+# DEPRECATED ENDPOINTS (removed):
+#   GET  /pending-doctors    → Use /pending-approvals?role=doctor
+#   POST /approve-doctor/{id} → Use /approve/{id}
+
+
+@admin_router.get("/pending-approvals", response_model=UsersPublic, tags=["🛡️ Admin | Approvals"])
+def get_pending_users(
+    session: SessionDep,
+    role: str | None = Query(None, description="Filter by role: 'doctor', 'staff', or None for all pending"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000)
+) -> Any:
+    """
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** OAuth2
+
+    List all users (doctors and staff) waiting for admin approval.
+
+    **Query Parameters:**
+    - `role`: Optional filter - "doctor", "staff", or None for all pending users
+    - `skip`: Results to skip (default: 0)
+    - `limit`: Results to return (default: 100, max: 1000)
+
+    **Filters:**
+    - email_verified = TRUE (email confirmation done)
+    - is_approved = FALSE (not yet approved)
+    - role = "doctor" or "staff" (excludes admins)
+
+    **Returns:**
+    - Count of pending users
+    - List with: id, email, full_name, phone, role, specialization, registration_number, clinic_name
+    """
+    # Build query
+    query = select(User).where(
+        User.is_verified == True,
+        User.is_approved == False,
+        User.role.in_(["doctor", "staff"])
+    )
+    
+    # Optional role filter
+    if role and role in ["doctor", "staff"]:
+        query = query.where(User.role == role)
+    
+    # Get count
+    count_statement = select(func.count()).where(
+        User.is_verified == True,
+        User.is_approved == False,
+        User.role.in_(["doctor", "staff"])
+    )
+    if role and role in ["doctor", "staff"]:
+        count_statement = count_statement.where(User.role == role)
+    count = session.exec(count_statement).one()
+    
+    # Get paginated results, order by newest first
+    pending_users = session.exec(query.order_by(User.join_date.desc()).offset(skip).limit(limit)).all()
+    
+    return UsersPublic(data=pending_users, count=count)
+
+
+@admin_router.post("/approve/{user_id}", response_model=ApprovalResponse, tags=["🛡️ Admin | Approvals"])
+def approve_user(
+    user_id: uuid.UUID,
+    request_data: ApprovalRequest,
+    session: SessionDep = None,
+    current_user: CurrentUser = None
+) -> Any:
+    """
+    🛡️ **Access:** ADMIN only
+
+    **Authentication:** OAuth2
+
+    Approve or reject a user's signup application (doctor or staff).
+
+    **Path Parameters:**
+    - `user_id`: UUID of the user
+
+    **Request Body:**
+    - `action`: "approve" or "reject"
+    - `reason`: Rejection reason (required if action=reject)
+
+    **Behavior:**
+    - approve: Sets is_approved=TRUE, is_active=TRUE, sends approval email
+    - reject: Sets is_approved=FALSE, is_active=FALSE, sends rejection email with reason
+
+    **Returns:** Success status, message, and updated user object
+    """
+    # Validate action and reason
+    if request_data.action == "reject" and not request_data.reason:
+        raise HTTPException(
+            status_code=400,
+            detail="Rejection reason is required when rejecting a user"
+        )
+    
+    user = session.get(User, user_id)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.role not in ["doctor", "staff"]:
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint only approves doctors and staff (not admins)"
+        )
+    
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot approve a user whose email is not verified yet"
+        )
+    
+    role_text = user.role.capitalize()
+    
+    if request_data.action == "approve":
+        # Check if already approved (idempotent)
+        if user.is_approved:
+            return ApprovalResponse(
+                success=True,
+                message=f"{role_text} '{user.full_name}' is already approved",
+                user=user
+            )
+        
+        user.is_approved = True
+        user.is_active = True
+        user.rejection_reason = None
+        message = f"✅ {role_text} '{user.full_name}' has been approved and can now login"
+        
+        # Send approval email
+        if settings.emails_enabled:
+            try:
+                send_email(
+                    email_to=user.email,
+                    subject=f"🎉 Your {role_text} Account Has Been Approved!",
+                    html_content=f"""
+                    <h2>Account Approved!</h2>
+                    <p>Dear {user.full_name},</p>
+                    <p>Great news! Your {user.role} account has been approved by our admin team.</p>
+                    <p>You can now login to the system with your credentials.</p>
+                    <p>Best regards,<br>Administration Team</p>
+                    """
+                )
+            except Exception as e:
+                print(f"Failed to send approval email: {str(e)}")
+    
+    else:  # reject
+        user.is_approved = False
+        user.is_active = False
+        user.rejection_reason = request_data.reason
+        message = f"❌ {role_text} '{user.full_name}' has been rejected"
+        
+        # Send rejection email
+        if settings.emails_enabled:
+            try:
+                reason_text = f"<p><strong>Reason:</strong> {request_data.reason}</p>" if request_data.reason else ""
+                send_email(
+                    email_to=user.email,
+                    subject="Account Application Update",
+                    html_content=f"""
+                    <h2>Application Update</h2>
+                    <p>Dear {user.full_name},</p>
+                    <p>Thank you for your interest in joining as a {user.role}.</p>
+                    <p>Unfortunately, we are unable to approve your account at this time.</p>
+                    {reason_text}
+                    <p>Please feel free to contact our support team if you have questions.</p>
+                    <p>Best regards,<br>Administration Team</p>
+                    """
+                )
+            except Exception as e:
+                print(f"Failed to send rejection email: {str(e)}")
+    
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    
+    # Audit log
+    try:
+        action = "approve_user" if request_data.action == "approve" else "reject_user"
+        audit = AuditLog(
+            user_id=current_user.id,
+            action=action,
+            entity="user",
+            entity_id=user.id,
+            changes={"is_approved": request_data.action == "approve", "reason": request_data.reason}
+        )
+        session.add(audit)
+        session.commit()
+    except Exception:
+        session.rollback()
+    
+    return ApprovalResponse(
+        success=True,
+        message=message,
+        user=user
+    )
+
+
+@admin_router.get("/pending-approvals/stats", response_model=ApprovalStats, tags=["🛡️ Admin | Approvals"])
+def get_approval_stats(
+    session: SessionDep,
+    current_user: CurrentUser = None
+) -> Any:
+    """
+    🛡️ **Access:** ADMIN only
+
+    **Authentication:** OAuth2
+
+    Get approval statistics for admin dashboard.
+
+    **Returns:**
+    - total_pending: All waiting approvals (verified, not approved)
+    - pending_doctors: Doctors waiting approval
+    - pending_staff: Staff waiting approval
+    - pending_unverified_email: Signed up but haven't verified email
+    - approved_today: Users approved today
+    - rejected_today: Users rejected today
+    """
+    from models.users_model import ApprovalStats
+    from datetime import datetime
+    
+    today = datetime.utcnow().date()
+    
+    # Total pending (email verified, approval pending)
+    total_pending = session.exec(
+        select(func.count()).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    # Pending doctors
+    pending_doctors = session.exec(
+        select(func.count()).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role == "doctor"
+        )
+    ).one()
+    
+    # Pending staff
+    pending_staff = session.exec(
+        select(func.count()).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role == "staff"
+        )
+    ).one()
+    
+    # Pending email verification
+    pending_unverified = session.exec(
+        select(func.count()).where(
+            User.is_verified == False,
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    # Approved today
+    approved_today = session.exec(
+        select(func.count()).where(
+            User.is_approved == True,
+            User.role.in_(["doctor", "staff"]),
+            User.join_date >= today
+        )
+    ).one()
+    
+    # Rejected today (users with rejection_reason)
+    rejected_today = session.exec(
+        select(func.count()).where(
+            User.is_approved == False,
+            User.rejection_reason.isnot(None),
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    return ApprovalStats(
+        total_pending=total_pending,
+        pending_doctors=pending_doctors,
+        pending_staff=pending_staff,
+        pending_unverified_email=pending_unverified,
+        approved_today=approved_today,
+        rejected_today=rejected_today
+    )
+
+
+# ============================================================================
+# COMBINE ROUTERS FOR EXPORT
+# ============================================================================
+# IMPORTANT: self_service_router MUST be included FIRST
+# This ensures /me endpoints are matched before /{user_id} (parameterized route)
+# FastAPI matches routes in the order they're registered
+router.include_router(self_service_router)
+router.include_router(admin_router)
