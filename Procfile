@@ -1,1 +1,1 @@
-web: python debug_main.py && uvicorn main:app --host 0.0.0.0 --port $PORT --log-level debug
+uvicorn main:app --host 127.0.0.1 --port $PORT
