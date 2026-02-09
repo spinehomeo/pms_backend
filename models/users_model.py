@@ -106,6 +106,7 @@ class UserUpdate(SQLModel):
     consultation_fee: Optional[float] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
     is_verified: Optional[bool] = None
+    is_approved: Optional[bool] = None  # NEW: Admin can approve/reject users
 
 
 class UserUpdateMe(SQLModel):
@@ -171,3 +172,27 @@ class ApprovalStats(SQLModel):
     low_stock_items: int = 0
     revenue_today: float = 0.0
     revenue_this_month: float = 0.0
+
+
+class UserStats(SQLModel):
+    """API OUTPUT MODEL for comprehensive user statistics"""
+    total_users: int
+    active_users: int
+    inactive_users: int
+    
+    total_doctors: int
+    active_doctors: int
+    pending_doctors: int
+    
+    total_staff: int
+    active_staff: int
+    pending_staff: int
+    
+    total_admins: int
+    
+    pending_verification: int  # Signed up but not verified email
+    pending_approval: int      # Verified but not approved
+    
+    created_today: int
+    created_this_week: int
+    created_this_month: int

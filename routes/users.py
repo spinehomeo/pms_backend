@@ -1,10 +1,10 @@
 import uuid
 import time
-from datetime import date, timedelta
-from typing import Any
+from datetime import date, datetime, timedelta
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, Security
-from sqlmodel import col, delete, func, select
+from sqlmodel import col, delete, func, select, or_
 from sqlalchemy.exc import IntegrityError
 import jwt
 
@@ -35,6 +35,7 @@ from models.users_model import (
     ApprovalRequest,
     ApprovalResponse,
     ApprovalStats,
+    UserStats,
 )
 from models.public_models import PatientRegisterPublic, PatientRegisterPhoneOnly, PatientRegisterSimple, PatientQuickAccessResponse
 from utils.utils import (
@@ -51,46 +52,131 @@ from models.audit_model import AuditLog
 
 # Router for admin-only operations (system-level CRUD)
 # This router has admin-only dependency at router level
-# No prefix here - will be included in main router with prefix
+# Prefix: /admin/users - for all admin user management endpoints
 admin_router = APIRouter(
+    prefix="/admin/users",
     dependencies=[Security(get_current_active_superuser)]
 )
 
 # Router for self-service + public endpoints (no router-level auth)
 # Individual endpoints apply their own dependencies as needed
-# No prefix here - will be included in main router with prefix
-self_service_router = APIRouter()
+# Prefix: /users - for self-service user endpoints
+self_service_router = APIRouter(prefix="/users")
 
 # Main router that combines both (for api/router.py to include)
-# This router has the /users prefix and includes both routers
-router = APIRouter(prefix="/users")
+# No prefix here - both sub-routers have their own prefixes
+router = APIRouter()
 
 
-@admin_router.get("/", response_model=UsersPublic, tags=["🛡️ Admin | User Management"])
-def read_users(session: SessionDep, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)) -> Any:
+@admin_router.get(
+    "/",
+    response_model=UsersPublic,
+    tags=["🛡️ Admin | User Management"],
+    operation_id="admin_read_users"
+)
+def read_users(
+    session: SessionDep,
+    role: Optional[Literal["doctor", "staff", "admin"]] = None,
+    is_approved: Optional[bool] = None,
+    is_verified: Optional[bool] = None,
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000)
+) -> Any:
     """
     🔐 **Access:** ADMIN only
 
     **Authentication:** DoctorOAuth2
 
-    Retrieve all users (doctors, staff, admins) in the system.
+    Retrieve all users (doctors, staff, admins) in the system with advanced filtering.
 
     **Query Parameters:**
+    - `role`: Filter by role (doctor, staff, admin)
+    - `is_approved`: Filter by approval status (true/false)
+    - `is_verified`: Filter by email verification status (true/false)
+    - `is_active`: Filter by active status (true/false)
+    - `search`: Search by name, email, or phone (case-insensitive)
     - `skip`: Number of records to skip (default: 0)
     - `limit`: Number of records to return (default: 100, max: 1000)
 
     **Response:** List of users with total count
-    """
-    count_statement = select(func.count()).select_from(User)
-    count = session.exec(count_statement).one()
 
-    statement = select(User).offset(skip).limit(limit)
-    users = session.exec(statement).all()
+    **Examples:**
+    - Get all pending doctors: `?role=doctor&is_approved=false&is_verified=true`
+    - Get all active staff: `?role=staff&is_active=true`
+    - Search users: `?search=ahmed`
+    """
+    # Base query - IMPORTANT: Exclude PATIENT role (legacy data)
+    # Only query valid user roles (doctor, staff, admin)
+    query = select(User).where(
+        User.role.in_(["doctor", "staff", "admin"])
+    )
+    
+    # Apply filters
+    if role:
+        query = query.where(User.role == role)
+    
+    if is_approved is not None:
+        query = query.where(User.is_approved == is_approved)
+    
+    if is_verified is not None:
+        query = query.where(User.is_verified == is_verified)
+    
+    if is_active is not None:
+        query = query.where(User.is_active == is_active)
+    
+    if search:
+        search_pattern = f"%{search.lower()}%"
+        query = query.where(
+            or_(
+                func.lower(User.full_name).contains(search),
+                func.lower(User.email).contains(search) if User.email else False,
+                func.lower(User.phone).contains(search) if User.phone else False
+            )
+        )
+    
+    # Get total count
+    # IMPORTANT: Exclude PATIENT role (legacy data)
+    count_statement = select(func.count()).select_from(User).where(
+        User.role.in_(["doctor", "staff", "admin"])
+    )
+    
+    # Apply same filters to count
+    if role:
+        count_statement = count_statement.where(User.role == role)
+    if is_approved is not None:
+        count_statement = count_statement.where(User.is_approved == is_approved)
+    if is_verified is not None:
+        count_statement = count_statement.where(User.is_verified == is_verified)
+    if is_active is not None:
+        count_statement = count_statement.where(User.is_active == is_active)
+    if search:
+        count_statement = count_statement.where(
+            or_(
+                func.lower(User.full_name).contains(search),
+                func.lower(User.email).contains(search) if User.email else False,
+                func.lower(User.phone).contains(search) if User.phone else False
+            )
+        )
+    
+    count = session.exec(count_statement).one()
+    
+    # Order by most recent first
+    query = query.order_by(User.join_date.desc())
+    
+    # Get paginated results
+    users = session.exec(query.offset(skip).limit(limit)).all()
 
     return UsersPublic(data=users, count=count)
 
 
-@admin_router.post("/", response_model=UserPublic, tags=["🛡️ Admin | User Management"])
+@admin_router.post(
+    "/",
+    response_model=UserPublic,
+    tags=["🛡️ Admin | User Management"],
+    operation_id="admin_create_user"
+)
 def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     """
     🔐 **Access:** ADMIN only
@@ -99,6 +185,13 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
 
     Create a new user (doctor, staff, or admin).
 
+    **Key Differences from Public Signup:**
+    - User is **auto-verified** (no email verification needed)
+    - User is **auto-approved** (no additional admin approval needed)
+    - User is **immediately active** (can login right away)
+    - Admin can set all fields directly
+    - No email verification sent
+
     **Required fields:** email, password, full_name, role
 
     **Role options:** "doctor", "staff", "admin"
@@ -106,7 +199,9 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     **Behavior:**
     - Checks if email already exists
     - Hashes password securely
-    - Sends email verification (if configured)
+    - Sets is_verified = TRUE
+    - Sets is_approved = TRUE
+    - Sets is_active = TRUE
     - Logs creation in audit trail
     """
     user = crud.get_user_by_email(session=session, email=user_in.email)
@@ -118,27 +213,574 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
 
     user = crud.create_user(session=session, user_create=user_in)
     
-    # Send verification email
-    if settings.emails_enabled and user_in.email:
-        verification_token = generate_email_verification_token(email=user_in.email)
-        email_data = generate_email_verification_email(
-            email_to=user_in.email, email=user_in.email, token=verification_token
-        )
-        send_email(
-            email_to=user_in.email,
-            subject=email_data.subject,
-            html_content=email_data.html_content,
-        )
+    # CRITICAL: Admin-created users are auto-approved and verified
+    user.is_verified = True   # Auto-verified (no email verification needed)
+    user.is_approved = True   # Auto-approved (no additional approval needed)
+    user.is_active = True     # Immediately active (can login right away)
+    
+    session.add(user)
+    session.commit()
+    session.refresh(user)
     
     # Audit log
     try:
-        audit = AuditLog(user_id=user.id, action="create_user", entity="user", entity_id=user.id)
+        audit = AuditLog(
+            user_id=user.id,
+            action="user_created_by_admin",
+            entity="user",
+            entity_id=user.id,
+            changes=f"User created by admin: {user.full_name} ({user.role})"
+        )
         session.add(audit)
         session.commit()
     except Exception:
         # Don't break user creation on audit failures
         session.rollback()
+    
     return user
+
+
+# ============================================================================
+# APPROVAL ENDPOINTS - Static routes MUST come before parameterized routes
+# ============================================================================
+
+@admin_router.get("/pending-approvals", response_model=UsersPublic, tags=["🛡️ Admin | Approvals"])
+def get_pending_users(
+    session: SessionDep,
+    role: str | None = Query(None, description="Filter by role: 'doctor', 'staff', or None for all pending"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000)
+) -> Any:
+    """
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** OAuth2
+
+    List all users (doctors and staff) waiting for admin approval.
+
+    **Query Parameters:**
+    - `role`: Optional filter - "doctor", "staff", or None for all pending users
+    - `skip`: Results to skip (default: 0)
+    - `limit`: Results to return (default: 100, max: 1000)
+
+    **Filters:**
+    - email_verified = TRUE (email confirmation done)
+    - is_approved = FALSE (not yet approved)
+    - role = "doctor" or "staff" (excludes admins)
+
+    **Returns:**
+    - Count of pending users
+    - List with: id, email, full_name, phone, role, specialization, registration_number, clinic_name
+    """
+    # Build query
+    query = select(User).where(
+        User.is_verified == True,
+        User.is_approved == False,
+        User.role.in_(["doctor", "staff"])
+    )
+    
+    # Optional role filter
+    if role and role in ["doctor", "staff"]:
+        query = query.where(User.role == role)
+    
+    # Get count
+    count_statement = select(func.count()).where(
+        User.is_verified == True,
+        User.is_approved == False,
+        User.role.in_(["doctor", "staff"])
+    )
+    if role and role in ["doctor", "staff"]:
+        count_statement = count_statement.where(User.role == role)
+    count = session.exec(count_statement).one()
+    
+    # Get paginated results, order by newest first
+    pending_users = session.exec(query.order_by(User.join_date.desc()).offset(skip).limit(limit)).all()
+    
+    return UsersPublic(data=pending_users, count=count)
+
+
+@admin_router.get("/pending-approvals/stats", response_model=ApprovalStats, tags=["🛡️ Admin | Approvals"])
+def get_approval_stats(
+    session: SessionDep,
+    current_user: CurrentUser = None
+) -> Any:
+    """
+    🛡️ **Access:** ADMIN only
+
+    **Authentication:** OAuth2
+
+    Get approval statistics for admin dashboard.
+
+    **Returns:**
+    - total_pending: All waiting approvals (verified, not approved)
+    - pending_doctors: Doctors waiting approval
+    - pending_staff: Staff waiting approval
+    - pending_unverified_email: Signed up but haven't verified email
+    - approved_today: Users approved today
+    - rejected_today: Users rejected today
+    """
+    from models.users_model import ApprovalStats
+    from datetime import datetime
+    
+    today = datetime.utcnow().date()
+    
+    # Total pending (email verified, approval pending)
+    total_pending = session.exec(
+        select(func.count()).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    # Pending doctors
+    pending_doctors = session.exec(
+        select(func.count()).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role == "doctor"
+        )
+    ).one()
+    
+    # Pending staff
+    pending_staff = session.exec(
+        select(func.count()).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role == "staff"
+        )
+    ).one()
+    
+    # Pending email verification
+    pending_unverified = session.exec(
+        select(func.count()).where(
+            User.is_verified == False,
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    # Approved today
+    approved_today = session.exec(
+        select(func.count()).where(
+            User.is_approved == True,
+            User.role.in_(["doctor", "staff"]),
+            User.join_date >= today
+        )
+    ).one()
+    
+    # Rejected today (users with rejection_reason)
+    rejected_today = session.exec(
+        select(func.count()).where(
+            User.is_approved == False,
+            User.rejection_reason.isnot(None),
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    return ApprovalStats(
+        total_pending=total_pending,
+        pending_doctors=pending_doctors,
+        pending_staff=pending_staff,
+        pending_unverified_email=pending_unverified,
+        approved_today=approved_today,
+        rejected_today=rejected_today
+    )
+
+
+@admin_router.get(
+    "/{user_id}",
+    response_model=UserPublic,
+    tags=["🛡️ Admin | User Management"],
+    operation_id="admin_read_user_by_id"
+)
+def read_user_by_id(
+    user_id: uuid.UUID,
+    session: SessionDep
+) -> Any:
+    """
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Get detailed information about a specific user by ID.
+
+    **Path Parameters:**
+    - `user_id`: UUID of the user
+
+    **Returns:**
+    - Full user details including:
+      - Basic info (name, email, role, phone)
+      - Status flags (verified, approved, active)
+      - Doctor-specific fields (specialization, clinic, fee)
+      - Timestamps (join date, last login)
+
+    **Note:** This is admin-only. Regular users use /users/me
+    """
+    user = session.get(User, user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+    
+    return user
+
+
+@admin_router.patch(
+    "/{user_id}",
+    response_model=UserPublic,
+    tags=["🛡️ Admin | User Management"],
+    operation_id="admin_update_user"
+)
+def update_user(
+    user_id: uuid.UUID,
+    user_update: UserUpdate,
+    session: SessionDep,
+    current_admin: CurrentUser
+) -> Any:
+    """
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Update any user's information.
+
+    **Path Parameters:**
+    - `user_id`: UUID of user to update
+
+    **Updateable Fields:**
+    - Basic: email, full_name, phone, role
+    - Doctor: specialization, registration_number, clinic_name, clinic_address, consultation_fee
+    - Status: is_verified, is_approved, is_active
+
+    **Admin Powers:**
+    - Can change user role (doctor ↔ staff ↔ admin)
+    - Can manually verify email (is_verified)
+    - Can manually approve/unapprove (is_approved)
+    - Can activate/deactivate account (is_active)
+    - Can update any field
+
+    **Restrictions:**
+    - Email must be unique if changed
+    - Cannot update password via this endpoint (use /password endpoints)
+    - User must exist
+
+    **Behavior:**
+    - Only provided fields are updated (partial update)
+    - Logs all changes in audit trail
+    - Checks email uniqueness if email changed
+    """
+    
+    # Get user
+    user = session.get(User, user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+    
+    # Track what changed for audit log
+    changes = {}
+    
+    # Update only provided fields
+    update_data = user_update.model_dump(exclude_unset=True)
+    
+    # Check email uniqueness if email is being changed
+    if "email" in update_data and update_data["email"] != user.email:
+        existing = session.exec(
+            select(User).where(
+                User.email == update_data["email"],
+                User.id != user_id
+            )
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already in use by another user"
+            )
+        changes["email"] = {
+            "from": user.email,
+            "to": update_data["email"]
+        }
+    
+    # Track role changes
+    if "role" in update_data and update_data["role"] != user.role:
+        changes["role"] = {
+            "from": str(user.role),
+            "to": str(update_data["role"])
+        }
+    
+    # Track status changes
+    for field in ["is_verified", "is_approved", "is_active"]:
+        if field in update_data and update_data[field] != getattr(user, field):
+            changes[field] = {
+                "from": getattr(user, field),
+                "to": update_data[field]
+            }
+    
+    # Apply updates
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    
+    # Log audit trail
+    if changes:
+        try:
+            audit = AuditLog(
+                user_id=user.id,
+                action="user_updated_by_admin",
+                entity="user",
+                entity_id=user.id,
+                changes=f"Updates: {str(changes)}"
+            )
+            session.add(audit)
+            session.commit()
+        except Exception:
+            session.rollback()
+    
+    return user
+
+
+@admin_router.delete(
+    "/{user_id}",
+    response_model=dict,
+    tags=["🛡️ Admin | User Management"],
+    operation_id="admin_delete_user"
+)
+def delete_user(
+    user_id: uuid.UUID,
+    session: SessionDep,
+    current_admin: CurrentUser
+) -> Any:
+    """
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Delete a user from the system.
+
+    **Path Parameters:**
+    - `user_id`: UUID of user to delete
+
+    **Restrictions:**
+    - Cannot delete yourself (safety measure)
+    - Doctors with assigned patients should be handled carefully
+      (consider soft delete or transfer patients first)
+
+    **Behavior:**
+    - Permanently deletes user from database
+    - Cascades to related records (based on FK constraints)
+    - Logs deletion in audit trail
+    - Cannot be undone (consider soft delete as alternative)
+
+    **Alternative: Soft Delete**
+    Instead of deleting, consider:
+    - Set is_active = FALSE (deactivate)
+    - Set is_approved = FALSE (revoke approval)
+    - Keep user data for audit trail
+    """
+    
+    # Get user
+    user = session.get(User, user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+    
+    # Safety: Cannot delete yourself
+    if user.id == current_admin.id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete your own account. Use self-service endpoint instead."
+        )
+    
+    # Optional: Check for dependencies (e.g., assigned patients)
+    if user.role == "doctor":
+        from models.patients_model import Patient
+        patient_count = session.exec(
+            select(func.count()).where(Patient.doctor_id == user.id)
+        ).one()
+        
+        if patient_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete doctor with {patient_count} assigned patients. Transfer patients first."
+            )
+    
+    # Log before deletion
+    try:
+        audit = AuditLog(
+            user_id=user.id,
+            action="user_deleted_by_admin",
+            entity="user",
+            entity_id=user.id,
+            changes=f"User deleted: {user.full_name} ({user.role})"
+        )
+        session.add(audit)
+        session.commit()
+    except Exception:
+        session.rollback()
+    
+    # Delete user
+    session.delete(user)
+    session.commit()
+    
+    return {
+        "message": f"User '{user.full_name}' ({user.role}) has been deleted"
+    }
+
+
+@admin_router.get(
+    "/stats",
+    response_model=UserStats,
+    tags=["🛡️ Admin | User Management"],
+    operation_id="admin_get_user_stats"
+)
+def get_user_stats(
+    session: SessionDep
+) -> Any:
+    """
+    🔐 **Access:** ADMIN only
+
+    **Authentication:** DoctorOAuth2
+
+    Get comprehensive user statistics for admin dashboard.
+
+    **Returns:**
+    - Total users by role (doctors, staff, admins)
+    - Active vs inactive counts
+    - Pending approvals/verifications
+    - Recent signup trends (today, this week, this month)
+
+    **Use Cases:**
+    - Dashboard overview
+    - Monitor user growth
+    - Track approvals needed
+    - System health metrics
+    """
+    
+    now = datetime.utcnow()
+    today = now.date()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    
+    # Total users - IMPORTANT: Exclude PATIENT role (legacy data)
+    total_users = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role.in_(["doctor", "staff", "admin"])
+        )
+    ).one()
+    active_users = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role.in_(["doctor", "staff", "admin"]),
+            User.is_active == True
+        )
+    ).one()
+    inactive_users = total_users - active_users
+    
+    # Doctors
+    total_doctors = session.exec(
+        select(func.count()).select_from(User).where(User.role == "doctor")
+    ).one()
+    active_doctors = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role == "doctor",
+            User.is_active == True
+        )
+    ).one()
+    pending_doctors = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role == "doctor",
+            User.is_verified == True,
+            User.is_approved == False
+        )
+    ).one()
+    
+    # Staff
+    total_staff = session.exec(
+        select(func.count()).select_from(User).where(User.role == "staff")
+    ).one()
+    active_staff = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role == "staff",
+            User.is_active == True
+        )
+    ).one()
+    pending_staff = session.exec(
+        select(func.count()).select_from(User).where(
+            User.role == "staff",
+            User.is_verified == True,
+            User.is_approved == False
+        )
+    ).one()
+    
+    # Admins
+    total_admins = session.exec(
+        select(func.count()).select_from(User).where(User.role == "admin")
+    ).one()
+    
+    # Pending counts
+    pending_verification = session.exec(
+        select(func.count()).select_from(User).where(
+            User.is_verified == False,
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    pending_approval = session.exec(
+        select(func.count()).select_from(User).where(
+            User.is_verified == True,
+            User.is_approved == False,
+            User.role.in_(["doctor", "staff"])
+        )
+    ).one()
+    
+    # Recent signups - IMPORTANT: Exclude PATIENT role (legacy data)
+    created_today = session.exec(
+        select(func.count()).select_from(User).where(
+            User.join_date >= today,
+            User.role.in_(["doctor", "staff", "admin"])
+        )
+    ).one()
+    
+    created_this_week = session.exec(
+        select(func.count()).select_from(User).where(
+            User.join_date >= week_ago.date(),
+            User.role.in_(["doctor", "staff", "admin"])
+        )
+    ).one()
+    
+    created_this_month = session.exec(
+        select(func.count()).select_from(User).where(
+            User.join_date >= month_ago.date(),
+            User.role.in_(["doctor", "staff", "admin"])
+        )
+    ).one()
+    
+    return UserStats(
+        total_users=total_users,
+        active_users=active_users,
+        inactive_users=inactive_users,
+        total_doctors=total_doctors,
+        active_doctors=active_doctors,
+        pending_doctors=pending_doctors,
+        total_staff=total_staff,
+        active_staff=active_staff,
+        pending_staff=pending_staff,
+        total_admins=total_admins,
+        pending_verification=pending_verification,
+        pending_approval=pending_approval,
+        created_today=created_today,
+        created_this_week=created_this_week,
+        created_this_month=created_this_month
+    )
 
 
 # ============================================================================
@@ -1106,61 +1748,6 @@ def list_doctors(
 #   POST /approve-doctor/{id} → Use /approve/{id}
 
 
-@admin_router.get("/pending-approvals", response_model=UsersPublic, tags=["🛡️ Admin | Approvals"])
-def get_pending_users(
-    session: SessionDep,
-    role: str | None = Query(None, description="Filter by role: 'doctor', 'staff', or None for all pending"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000)
-) -> Any:
-    """
-    🔐 **Access:** ADMIN only
-
-    **Authentication:** OAuth2
-
-    List all users (doctors and staff) waiting for admin approval.
-
-    **Query Parameters:**
-    - `role`: Optional filter - "doctor", "staff", or None for all pending users
-    - `skip`: Results to skip (default: 0)
-    - `limit`: Results to return (default: 100, max: 1000)
-
-    **Filters:**
-    - email_verified = TRUE (email confirmation done)
-    - is_approved = FALSE (not yet approved)
-    - role = "doctor" or "staff" (excludes admins)
-
-    **Returns:**
-    - Count of pending users
-    - List with: id, email, full_name, phone, role, specialization, registration_number, clinic_name
-    """
-    # Build query
-    query = select(User).where(
-        User.is_verified == True,
-        User.is_approved == False,
-        User.role.in_(["doctor", "staff"])
-    )
-    
-    # Optional role filter
-    if role and role in ["doctor", "staff"]:
-        query = query.where(User.role == role)
-    
-    # Get count
-    count_statement = select(func.count()).where(
-        User.is_verified == True,
-        User.is_approved == False,
-        User.role.in_(["doctor", "staff"])
-    )
-    if role and role in ["doctor", "staff"]:
-        count_statement = count_statement.where(User.role == role)
-    count = session.exec(count_statement).one()
-    
-    # Get paginated results, order by newest first
-    pending_users = session.exec(query.order_by(User.join_date.desc()).offset(skip).limit(limit)).all()
-    
-    return UsersPublic(data=pending_users, count=count)
-
-
 @admin_router.post("/approve/{user_id}", response_model=ApprovalResponse, tags=["🛡️ Admin | Approvals"])
 def approve_user(
     user_id: uuid.UUID,
@@ -1294,94 +1881,6 @@ def approve_user(
         success=True,
         message=message,
         user=user
-    )
-
-
-@admin_router.get("/pending-approvals/stats", response_model=ApprovalStats, tags=["🛡️ Admin | Approvals"])
-def get_approval_stats(
-    session: SessionDep,
-    current_user: CurrentUser = None
-) -> Any:
-    """
-    🛡️ **Access:** ADMIN only
-
-    **Authentication:** OAuth2
-
-    Get approval statistics for admin dashboard.
-
-    **Returns:**
-    - total_pending: All waiting approvals (verified, not approved)
-    - pending_doctors: Doctors waiting approval
-    - pending_staff: Staff waiting approval
-    - pending_unverified_email: Signed up but haven't verified email
-    - approved_today: Users approved today
-    - rejected_today: Users rejected today
-    """
-    from models.users_model import ApprovalStats
-    from datetime import datetime
-    
-    today = datetime.utcnow().date()
-    
-    # Total pending (email verified, approval pending)
-    total_pending = session.exec(
-        select(func.count()).where(
-            User.is_verified == True,
-            User.is_approved == False,
-            User.role.in_(["doctor", "staff"])
-        )
-    ).one()
-    
-    # Pending doctors
-    pending_doctors = session.exec(
-        select(func.count()).where(
-            User.is_verified == True,
-            User.is_approved == False,
-            User.role == "doctor"
-        )
-    ).one()
-    
-    # Pending staff
-    pending_staff = session.exec(
-        select(func.count()).where(
-            User.is_verified == True,
-            User.is_approved == False,
-            User.role == "staff"
-        )
-    ).one()
-    
-    # Pending email verification
-    pending_unverified = session.exec(
-        select(func.count()).where(
-            User.is_verified == False,
-            User.role.in_(["doctor", "staff"])
-        )
-    ).one()
-    
-    # Approved today
-    approved_today = session.exec(
-        select(func.count()).where(
-            User.is_approved == True,
-            User.role.in_(["doctor", "staff"]),
-            User.join_date >= today
-        )
-    ).one()
-    
-    # Rejected today (users with rejection_reason)
-    rejected_today = session.exec(
-        select(func.count()).where(
-            User.is_approved == False,
-            User.rejection_reason.isnot(None),
-            User.role.in_(["doctor", "staff"])
-        )
-    ).one()
-    
-    return ApprovalStats(
-        total_pending=total_pending,
-        pending_doctors=pending_doctors,
-        pending_staff=pending_staff,
-        pending_unverified_email=pending_unverified,
-        approved_today=approved_today,
-        rejected_today=rejected_today
     )
 
 
