@@ -808,9 +808,8 @@ def book_appointment_patient(
     session.add(patient)
     session.commit()
     
-    appt_dict = {
-        **appointment.__dict__,
-        "patient_name": patient.full_name,
-        "patient_phone": patient.phone
-    }
-    return AppointmentPublic(**appt_dict)
+    # Return appointment with patient details using model_validate
+    appointment_response = AppointmentPublic.model_validate(appointment)
+    appointment_response.patient_name = patient.full_name
+    appointment_response.patient_phone = patient.phone
+    return appointment_response
