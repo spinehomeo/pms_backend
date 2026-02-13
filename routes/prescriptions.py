@@ -12,7 +12,7 @@ from models.prescriptions_model import (
     Prescription, PrescriptionCreate, PrescriptionPublic, PrescriptionsPublic,
     PrescriptionMedicine, PrescriptionMedicineCreate
 )
-from models.medicines_model import DoctorMedicineStock, MedicineMaster
+from models.medicines_model import DoctorMedicineStock, Medicine
 from models.patients_model import Patient
 from models.cases_model import PatientCase
 from models.login_model import Message
@@ -146,7 +146,7 @@ def create_prescription(
         # Add medicines to prescription
         for medicine_in in prescription_in.medicines:
             # Verify medicine exists first so we can use its name in errors
-            medicine = session.get(MedicineMaster, medicine_in.medicine_id)
+            medicine = session.get(Medicine, medicine_in.medicine_id)
             if not medicine:
                 raise HTTPException(
                     status_code=404,
@@ -237,7 +237,7 @@ def update_prescription(
         # Add new medicines (same logic as create)
         for medicine_in in prescription_in.medicines:
             # Verify medicine exists first
-            medicine = session.get(MedicineMaster, medicine_in.medicine_id)
+            medicine = session.get(Medicine, medicine_in.medicine_id)
             if not medicine:
                 raise HTTPException(
                     status_code=404,

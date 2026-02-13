@@ -15,7 +15,7 @@ from models.cases_model import PatientCase
 from models.prescriptions_model import Prescription, PrescriptionMedicine, PrescriptionType
 from models.appointments_model import Appointment, AppointmentStatus
 from models.followups_model import FollowUp
-from models.medicines_model import DoctorMedicineStock, MedicineUsageLog, MedicineMaster
+from models.medicines_model import DoctorMedicineStock, MedicineUsageLog, Medicine
 
 from models.login_model import Message
 
@@ -202,17 +202,17 @@ def get_medicine_usage_report(
     stmt = (
         select(
             period_expr,
-            MedicineMaster.name.label('medicine_name'),
+            Medicine.name.label('medicine_name'),
             func.sum(MedicineUsageLog.quantity_used).label('quantity'),
             func.count(func.distinct(MedicineUsageLog.patient_id)).label('unique_patients')
         )
         .join(DoctorMedicineStock, DoctorMedicineStock.id == MedicineUsageLog.stock_item_id)
-        .join(MedicineMaster, MedicineMaster.id == DoctorMedicineStock.medicine_id)
+        .join(Medicine, Medicine.id == DoctorMedicineStock.medicine_id)
         .where(
             DoctorMedicineStock.doctor_id == current_user.id,
             MedicineUsageLog.used_date.between(from_date, to_date)
         )
-        .group_by(period_expr, MedicineMaster.name)
+        .group_by(period_expr, Medicine.name)
         .order_by(period_expr)
     )
 
@@ -464,18 +464,18 @@ def get_prescription_analysis(
     )
     total_prescriptions = int(session.exec(total_prescriptions_stmt).one() or 0)
 
-    # Join prescription medicines -> stock -> medicine master
+    # Join prescription medicines -> stock -> medicine
     stmt = (
         select(
             Prescription.prescription_date.label('prescription_date'),
             Prescription.prescription_type.label('prescription_type'),
-            MedicineMaster.name.label('medicine_name'),
+            Medicine.name.label('medicine_name'),
             DoctorMedicineStock.potency.label('potency'),
             DoctorMedicineStock.form.label('form')
         )
         .join(PrescriptionMedicine, PrescriptionMedicine.prescription_id == Prescription.id)
         .join(DoctorMedicineStock, DoctorMedicineStock.id == PrescriptionMedicine.stock_used_id)
-        .join(MedicineMaster, MedicineMaster.id == DoctorMedicineStock.medicine_id)
+        .join(Medicine, Medicine.id == DoctorMedicineStock.medicine_id)
         .where(
             Prescription.doctor_id == current_user.id,
             Prescription.prescription_date.between(from_date, to_date)

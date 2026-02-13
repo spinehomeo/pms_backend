@@ -64,8 +64,8 @@ class PrescriptionMedicine(SQLModel, table=True):
         nullable=False,
         index=True
     )
-    medicine_id: uuid.UUID = Field(
-        foreign_key="medicine_master.id",
+    medicine_id: int = Field(
+        foreign_key="medicine.id",
         nullable=False,
         index=True
     )
@@ -77,7 +77,7 @@ class PrescriptionMedicine(SQLModel, table=True):
     
     # Relationships
     prescription: Prescription = Relationship(back_populates="medicines")
-    medicine: "MedicineMaster" = Relationship(back_populates="prescriptions")
+    medicine: "Medicine" = Relationship(back_populates="prescriptions")
     stock_used: "DoctorMedicineStock" = Relationship(back_populates="prescriptions")
 
 

@@ -3,15 +3,15 @@ import uuid
 from typing import Any, List, Optional
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from sqlmodel import func, select, and_
 
 from api.deps import CurrentUser, SessionDep
 from utils.time import utc_isoformat
 from models.medicines_model import (
-    MedicineMaster, DoctorMedicineStock, DoctorMedicineStockCreate, 
+    Medicine, DoctorMedicineStock, DoctorMedicineStockCreate, DoctorMedicineStockBulk,
     DoctorMedicineStockUpdate, DoctorMedicineStockPublic, MedicinesStockPublic,
-    MedicineMasterPublic, MedicinesPublic, MedicineForm, PotencyScale,
+    MedicinePublic, MedicinesPublic, FormEnum, ScaleEnum,
     MedicineUsageLog
 )
 from models.prescriptions_model import PrescriptionMedicine
@@ -32,53 +32,26 @@ def read_medicines_master(
     """
     Retrieve medicine master list.
     """
-    # Both doctors and superusers can access medicine master
+    # Both doctors and superusers can access medicine list
     if not current_user.is_doctor and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    count_statement = select(func.count()).select_from(MedicineMaster)
-    statement = select(MedicineMaster).offset(skip).limit(limit)
+    count_statement = select(func.count()).select_from(Medicine)
+    statement = select(Medicine).offset(skip).limit(limit)
     
     if search:
         search_filter = f"%{search}%"
         count_statement = count_statement.where(
-            MedicineMaster.name.ilike(search_filter) |
-            MedicineMaster.abbreviation.ilike(search_filter) |
-            MedicineMaster.common_indicators.ilike(search_filter)
+            Medicine.name.ilike(search_filter)
         )
         statement = statement.where(
-            MedicineMaster.name.ilike(search_filter) |
-            MedicineMaster.abbreviation.ilike(search_filter) |
-            MedicineMaster.common_indicators.ilike(search_filter)
+            Medicine.name.ilike(search_filter)
         )
-    
-    if kingdom:
-        count_statement = count_statement.where(MedicineMaster.kingdom == kingdom)
-        statement = statement.where(MedicineMaster.kingdom == kingdom)
     
     count = session.exec(count_statement).one()
     medicines = session.exec(statement).all()
     
     return MedicinesPublic(data=medicines, count=count)
-
-
-@router.get("/master/{medicine_id}", response_model=MedicineMasterPublic)
-def read_medicine_master(
-    session: SessionDep,
-    current_user: CurrentUser,
-    medicine_id: uuid.UUID
-) -> Any:
-    """
-    Get medicine from master list by ID.
-    """
-    if not current_user.is_doctor and not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    medicine = session.get(MedicineMaster, medicine_id)
-    if not medicine:
-        raise HTTPException(status_code=404, detail="Medicine not found")
-    
-    return medicine
 
 
 @router.get("/stock", response_model=MedicinesStockPublic)
@@ -87,13 +60,12 @@ def read_medicine_stock(
     current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
-    search: Optional[str] = Query(None, min_length=1, max_length=100),
-    low_stock: bool = False,
-    expired: bool = False,
-    medicine_id: Optional[uuid.UUID] = None
+    search: Optional[str] = Query(None, min_length=1, max_length=100)
 ) -> Any:
     """
     Retrieve doctor's medicine stock.
+    
+    Returns all medicine stock for the authenticated doctor.
     """
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can access stock")
@@ -112,44 +84,19 @@ def read_medicine_stock(
         .limit(limit)
     )
     
-    # Apply filters
+    # Apply search filter if provided
     if search:
         search_filter = f"%{search}%"
-        # Join with MedicineMaster for search
+        # Join with Medicine for search
         count_statement = (
             count_statement
-            .join(MedicineMaster)
-            .where(MedicineMaster.name.ilike(search_filter))
+            .join(Medicine)
+            .where(Medicine.name.ilike(search_filter))
         )
         statement = (
             statement
-            .join(MedicineMaster)
-            .where(MedicineMaster.name.ilike(search_filter))
-        )
-    
-    if low_stock:
-        count_statement = count_statement.where(
-            DoctorMedicineStock.quantity <= DoctorMedicineStock.low_stock_threshold
-        )
-        statement = statement.where(
-            DoctorMedicineStock.quantity <= DoctorMedicineStock.low_stock_threshold
-        )
-    
-    if expired:
-        today = date.today()
-        count_statement = count_statement.where(
-            DoctorMedicineStock.expiry_date < today
-        )
-        statement = statement.where(
-            DoctorMedicineStock.expiry_date < today
-        )
-    
-    if medicine_id:
-        count_statement = count_statement.where(
-            DoctorMedicineStock.medicine_id == medicine_id
-        )
-        statement = statement.where(
-            DoctorMedicineStock.medicine_id == medicine_id
+            .join(Medicine)
+            .where(Medicine.name.ilike(search_filter))
         )
     
     count = session.exec(count_statement).one()
@@ -194,7 +141,7 @@ def create_stock_item(
         raise HTTPException(status_code=403, detail="Only doctors can add to stock")
     
     # Verify medicine exists in master
-    medicine = session.get(MedicineMaster, stock_in.medicine_id)
+    medicine = session.get(Medicine, stock_in.medicine_id)
     if not medicine:
         raise HTTPException(status_code=404, detail="Medicine not found in master list")
     
@@ -230,6 +177,100 @@ def create_stock_item(
     session.commit()
     session.refresh(stock_item)
     return stock_item
+
+
+@router.post(
+    "/stock/bulk",
+    status_code=201,
+    summary="Add multiple medicine stock entries at once"
+)
+def create_medicine_stock_bulk(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    payload: List[DoctorMedicineStockCreate] = Body(...)
+) -> Any:
+    """
+    Add multiple medicine stock entries in a single request.
+    
+    Send a JSON array directly:
+    ```json
+    [
+      {
+        "potency": "200",
+        "potency_scale": "C",
+        "form": "GLOBULES",
+        "quantity": 100,
+        ...
+      }
+    ]
+    ```
+    
+    - **Accepts**: List of medicine stock items
+    - **Returns**: Count of successfully added items
+    - **Note**: Existing items with same medicine, potency, and form will have quantity updated
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can add to stock")
+    
+    if not payload:
+        raise HTTPException(status_code=400, detail="Empty payload - provide at least one item")
+    
+    if len(payload) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 items per bulk request")
+    
+    created_count = 0
+    updated_count = 0
+    
+    for stock_in in payload:
+        # Verify medicine exists in master
+        medicine = session.get(Medicine, stock_in.medicine_id)
+        if not medicine:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Medicine ID {stock_in.medicine_id} not found in master list"
+            )
+        
+        # Check if same medicine with same potency and form already exists
+        existing = session.exec(
+            select(DoctorMedicineStock).where(
+                DoctorMedicineStock.doctor_id == current_user.id,
+                DoctorMedicineStock.medicine_id == stock_in.medicine_id,
+                DoctorMedicineStock.potency == stock_in.potency,
+                DoctorMedicineStock.form == stock_in.form
+            )
+        ).first()
+        
+        if existing:
+            # Update existing stock instead of creating new
+            existing.quantity += stock_in.quantity
+            existing.purchase_date = stock_in.purchase_date or date.today()
+            existing.batch_number = stock_in.batch_number or existing.batch_number
+            existing.expiry_date = stock_in.expiry_date or existing.expiry_date
+            existing.manufacturer = stock_in.manufacturer or existing.manufacturer
+            existing.storage_location = stock_in.storage_location or existing.storage_location
+            existing.is_active = stock_in.is_active if hasattr(stock_in, 'is_active') else True
+            existing.low_stock_threshold = stock_in.low_stock_threshold or existing.low_stock_threshold
+            
+            session.add(existing)
+            updated_count += 1
+        else:
+            # Create new stock item
+            stock_item = DoctorMedicineStock.model_validate(
+                stock_in,
+                update={"doctor_id": current_user.id}
+            )
+            session.add(stock_item)
+            created_count += 1
+    
+    session.commit()
+    
+    return {
+        "message": f"Successfully processed {len(payload)} items",
+        "created": created_count,
+        "updated": updated_count,
+        "total": created_count + updated_count
+    }
 
 
 @router.put("/stock/{stock_id}", response_model=DoctorMedicineStockPublic)
@@ -407,3 +448,24 @@ def get_expiring_medicines(
         "expiry_threshold": expiry_threshold.isoformat(),
         "timestamp": utc_isoformat()
     }
+
+
+# ========== GENERIC MEDICINE ROUTE (MUST BE LAST) ==========
+# This route is placed at the end to avoid matching specific routes
+@router.get("/{medicine_id}", response_model=MedicinePublic)
+def read_medicine(
+    session: SessionDep,
+    current_user: CurrentUser,
+    medicine_id: int
+) -> Any:
+    """
+    Get medicine by ID.
+    """
+    if not current_user.is_doctor and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    medicine = session.get(Medicine, medicine_id)
+    if not medicine:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+    
+    return medicine

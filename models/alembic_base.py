@@ -4,7 +4,7 @@ from sqlmodel import SQLModel
 from models.users_model import User
 from models.prescriptions_model import Prescription, PrescriptionMedicine
 from models.patients_model import Patient
-from models.medicines_model import MedicineMaster, DoctorMedicineStock, MedicineUsageLog
+from models.medicines_model import Medicine, DoctorMedicineStock, MedicineUsageLog
 from models.followups_model import FollowUp
 from models.cases_model import PatientCase
 from models.appointments_model import Appointment

@@ -7,47 +7,41 @@ from enum import Enum
 import sqlalchemy as sa
 
 
-class MedicineForm(str, Enum):
-    PILLS = "pills"
-    GLOBULES = "globules"
-    DROPS = "drops"
-    POWDER = "powder"
-    OINTMENT = "ointment"
-    SUPPOSITORY = "suppository"
-    INJECTION = "injection"
-
-
-class PotencyScale(str, Enum):
-    X = "X"
+class ScaleEnum(str, Enum):
     C = "C"
-    LM = "LM"
+    X = "X"
     Q = "Q"
-    M = "M"
-    CM = "CM"
-    MM = "MM"
+
+
+
+class FormEnum(str, Enum):
+    DISKETTE = "Diskette"
+    SOM = "SOM"
+    BLANKETS = "Blankets"
+    BIO_CHEMIC = "Bio Chemic"
+    PLACEBO = "Placebo"
+    GLOBULES = "Globules"
+    DROPS = "Drops"
+
+
+class PackingEnum(str, Enum):
+    PACK_10 = "10"
+    PACK_30 = "30"
+    PACK_100 = "100"
+    PACK_200 = "200"
+    PACK_450 = "450"
+    PACK_500 = "500"
+    PACK_1000 = "1000"
 
 
 # ========== DATABASE MODELS (CRUD) ==========
-class MedicineMasterBase(SQLModel):
-    """Base medicine master model"""
-    name: str = Field(max_length=255, nullable=False, index=True)
-    abbreviation: Optional[str] = Field(default=None, max_length=50)
-    kingdom: Optional[str] = Field(default=None, max_length=100)
-    source: Optional[str] = Field(default=None)
-    common_indicators: Optional[str] = Field(default=None)
-    key_symptoms: Optional[str] = Field(default=None)
-    modalities: Optional[str] = Field(default=None)
-    temperament: Optional[str] = Field(default=None)
-    miasmatic_background: Optional[str] = Field(default=None)
-    repertory_rubrics: Optional[str] = Field(default=None)
-    notes: Optional[str] = Field(default=None)
-
-
-class MedicineMaster(MedicineMasterBase, table=True):
-    """DATABASE MODEL for medicine master - USED FOR CRUD"""
-    __tablename__ = "medicine_master"
+class Medicine(SQLModel, table=True):
+    """DATABASE MODEL for medicine"""
+    __tablename__ = "medicine"
     
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, nullable=False, max_length=255)
+    description: Optional[str] = Field(default=None)
     
     # Relationships
     doctor_stocks: List["DoctorMedicineStock"] = Relationship(back_populates="medicine")
@@ -57,8 +51,8 @@ class MedicineMaster(MedicineMasterBase, table=True):
 class DoctorMedicineStockBase(SQLModel):
     """Base doctor medicine stock model"""
     potency: str = Field(max_length=50)
-    potency_scale: PotencyScale = Field(default=PotencyScale.C)
-    form: MedicineForm = Field(default=MedicineForm.GLOBULES)
+    potency_scale: ScaleEnum = Field(default=ScaleEnum.C)
+    form: FormEnum = Field(default=FormEnum.GLOBULES)
     quantity: float = Field(default=0.0, ge=0)
     unit: str = Field(default="packet", max_length=50)
     batch_number: Optional[str] = Field(default=None, max_length=100)
@@ -76,8 +70,8 @@ class DoctorMedicineStock(DoctorMedicineStockBase, table=True):
     __tablename__ = "doctor_medicine_stock"
     
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    medicine_id: uuid.UUID = Field(
-        foreign_key="medicine_master.id",
+    medicine_id: int = Field(
+        foreign_key="medicine.id",
         nullable=False,
         index=True
     )
@@ -88,7 +82,7 @@ class DoctorMedicineStock(DoctorMedicineStockBase, table=True):
     )
     
     # Relationships
-    medicine: MedicineMaster = Relationship(back_populates="doctor_stocks")
+    medicine: Medicine = Relationship(back_populates="doctor_stocks")
     doctor: "User" = Relationship(back_populates="medicine_stock")
     prescriptions: List["PrescriptionMedicine"] = Relationship(back_populates="stock_used")
 
@@ -130,7 +124,12 @@ class MedicineUsageLog(SQLModel, table=True):
 # ========== REQUEST MODELS (API Input) ==========
 class DoctorMedicineStockCreate(DoctorMedicineStockBase):
     """API INPUT MODEL for creating stock items"""
-    medicine_id: uuid.UUID
+    medicine_id: int
+
+
+class DoctorMedicineStockBulk(SQLModel):
+    """API INPUT MODEL for bulk creating stock items"""
+    items: List[DoctorMedicineStockCreate]
 
 
 class DoctorMedicineStockUpdate(SQLModel):
@@ -145,21 +144,23 @@ class DoctorMedicineStockUpdate(SQLModel):
 
 
 # ========== RESPONSE MODELS (API Output) ==========
-class MedicineMasterPublic(MedicineMasterBase):
-    """API OUTPUT MODEL for medicine master"""
-    id: uuid.UUID
+class MedicinePublic(SQLModel):
+    """API OUTPUT MODEL for medicine"""
+    id: int
+    name: str
+    description: Optional[str] = None
 
 
 class MedicinesPublic(SQLModel):
-    """API OUTPUT MODEL for list of medicines from master"""
-    data: List[MedicineMasterPublic]
+    """API OUTPUT MODEL for list of medicines"""
+    data: List[MedicinePublic]
     count: int
 
 
 class DoctorMedicineStockPublic(DoctorMedicineStockBase):
     """API OUTPUT MODEL for stock items"""
     id: uuid.UUID
-    medicine_id: uuid.UUID
+    medicine_id: int
     doctor_id: uuid.UUID
     medicine_name: Optional[str] = None
 

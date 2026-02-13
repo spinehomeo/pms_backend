@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from core.db import engine
 from core.security import get_password_hash
-from models.medicines_model import MedicineMaster, MedicineForm, PotencyScale
+from models.medicines_model import Medicine, FormEnum, ScaleEnum
 from models.patients_model import PatientGender
 from models.users_model import User, UserRole
 
@@ -119,72 +119,37 @@ def create_common_medicines(session: Session) -> None:
         {
             "name": "Arnica Montana",
             "abbreviation": "Arn",
-            "kingdom": "Plant",
-            "source": "Leopard's bane",
-            "common_indicators": "Trauma, injury, bruising, shock",
-            "key_symptoms": "Sore, bruised feeling; says 'I'm well' when very sick",
-            "modalities": "Worse: touch, motion, rest. Better: lying down",
-            "temperament": "Apathetic, indifferent",
-            "miasmatic_background": "Psoric",
-            "repertory_rubrics": "Generalities, injury; Mind, says nothing is the matter"
+            "notes": "For trauma, bruises, and shock"
         },
         {
             "name": "Belladonna",
             "abbreviation": "Bell",
-            "kingdom": "Plant",
-            "source": "Deadly nightshade",
-            "common_indicators": "Sudden onset, high fever, inflammation",
-            "key_symptoms": "Red, hot, swollen; throbbing pain; delirium",
-            "modalities": "Worse: touch, jar, noise, light. Better: bending backward",
-            "temperament": "Restless, excited, violent",
-            "miasmatic_background": "Psoric/Psora",
-            "repertory_rubrics": "Fever, heat; Head, congestion"
+            "notes": "For sudden, intense conditions with heat"
         },
         {
             "name": "Nux Vomica",
             "abbreviation": "Nux-v",
-            "kingdom": "Plant",
-            "source": "Poison nut",
-            "common_indicators": "Digestive issues, irritability, overwork",
-            "key_symptoms": "Irritable, impatient; chilliness; constricted feeling",
-            "modalities": "Worse: morning, mental exertion, spices. Better: warmth, rest",
-            "temperament": "Irritable, fault-finding, hurried",
-            "miasmatic_background": "Psoric/Sycotic",
-            "repertory_rubrics": "Mind, irritability; Stomach, nausea"
+            "notes": "For digestive issues and stress"
         },
         {
             "name": "Pulsatilla",
             "abbreviation": "Puls",
-            "kingdom": "Plant",
-            "source": "Wind flower",
-            "common_indicators": "Changeable symptoms, mild temperament, menstrual issues",
-            "key_symptoms": "Weepy, clingy; changeable symptoms; thirstless",
-            "modalities": "Worse: heat, rich food, evening. Better: open air, motion",
-            "temperament": "Mild, yielding, emotional",
-            "miasmatic_background": "Psoric",
-            "repertory_rubrics": "Mind, weeping; Generalities, changeable"
+            "notes": "For changeable symptoms, gentle disposition"
         },
         {
             "name": "Sulphur",
             "abbreviation": "Sulph",
-            "kingdom": "Mineral",
-            "source": "Sulfur",
-            "common_indicators": "Skin issues, philosophical, untidy",
-            "key_symptoms": "Itchy skin; philosophical; heat in palms and soles",
-            "modalities": "Worse: warmth, bathing, standing. Better: dry weather, motion",
-            "temperament": "Philosophical, messy, selfish",
-            "miasmatic_background": "Psoric",
-            "repertory_rubrics": "Skin, itching; Generalities, heat"
+            "notes": "For skin conditions and heat"
         }
     ]
     
     for medicine_data in common_medicines:
         existing = session.exec(
-            select(MedicineMaster).where(MedicineMaster.name == medicine_data["name"])
+            select(Medicine).where(Medicine.name == medicine_data["name"])
         ).first()
         
         if not existing:
-            medicine = MedicineMaster(**medicine_data)
+            medicine = Medicine(**medicine_data)
             session.add(medicine)
     
     session.commit()
@@ -194,15 +159,15 @@ def create_common_medicines(session: Session) -> None:
 def create_initial_stock(session: Session, doctor_id: str) -> None:
     """Create initial medicine stock for the doctor"""
     # Get medicine IDs
-    medicines = session.exec(select(MedicineMaster)).all()
+    medicines = session.exec(select(Medicine)).all()
     medicine_map = {m.name: m.id for m in medicines}
     
     initial_stock = [
         {
             "medicine_id": medicine_map.get("Arnica Montana"),
             "potency": "200",
-            "potency_scale": PotencyScale.C,
-            "form": MedicineForm.GLOBULES,
+            "potency_scale": ScaleEnum.C,
+            "form": FormEnum.GLOBULES,
             "quantity": 100.0,
             "unit": "bottle",
             "batch_number": "ARN200-001",
@@ -214,8 +179,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Belladonna"),
             "potency": "30",
-            "potency_scale": PotencyScale.C,
-            "form": MedicineForm.GLOBULES,
+            "potency_scale": ScaleEnum.C,
+            "form": FormEnum.GLOBULES,
             "quantity": 150.0,
             "unit": "bottle",
             "batch_number": "BELL30-001",
@@ -227,8 +192,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Nux Vomica"),
             "potency": "30",
-            "potency_scale": PotencyScale.C,
-            "form": MedicineForm.GLOBULES,
+            "potency_scale": ScaleEnum.C,
+            "form": FormEnum.GLOBULES,
             "quantity": 120.0,
             "unit": "bottle",
             "batch_number": "NUX30-001",
@@ -240,8 +205,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Pulsatilla"),
             "potency": "200",
-            "potency_scale": PotencyScale.C,
-            "form": MedicineForm.GLOBULES,
+            "potency_scale": ScaleEnum.C,
+            "form": FormEnum.GLOBULES,
             "quantity": 80.0,
             "unit": "bottle",
             "batch_number": "PULS200-001",
@@ -253,8 +218,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Sulphur"),
             "potency": "200",
-            "potency_scale": PotencyScale.C,
-            "form": MedicineForm.GLOBULES,
+            "potency_scale": ScaleEnum.C,
+            "form": FormEnum.GLOBULES,
             "quantity": 90.0,
             "unit": "bottle",
             "batch_number": "SULPH200-001",
