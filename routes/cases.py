@@ -156,6 +156,8 @@ def read_cases(
     for case in cases:
         case_response = PatientCasePublic.model_validate(case)
         case_response.patient_name = case.patient.full_name if case.patient else None
+        case_response.patient_phone = case.patient.phone if case.patient else None
+        case_response.patient_city = case.patient.city if case.patient else None
         response_cases.append(case_response)
     
     return CasesPublic(data=response_cases, count=count)
@@ -182,6 +184,8 @@ def read_case(
     
     case_response = PatientCasePublic.model_validate(case)
     case_response.patient_name = case.patient.full_name if case.patient else None
+    case_response.patient_phone = case.patient.phone if case.patient else None
+    case_response.patient_city = case.patient.city if case.patient else None
     return case_response
 
 
@@ -237,6 +241,8 @@ def create_case(
     
     case_response = PatientCasePublic.model_validate(case)
     case_response.patient_name = case.patient.full_name if case.patient else None
+    case_response.patient_phone = case.patient.phone if case.patient else None
+    case_response.patient_city = case.patient.city if case.patient else None
     return case_response
 
 
@@ -276,6 +282,8 @@ def update_case(
     
     case_response = PatientCasePublic.model_validate(case)
     case_response.patient_name = case.patient.full_name if case.patient else None
+    case_response.patient_phone = case.patient.phone if case.patient else None
+    case_response.patient_city = case.patient.city if case.patient else None
     return case_response
 
 

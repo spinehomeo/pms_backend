@@ -118,6 +118,8 @@ class PatientCasePublic(SQLModel):
     
     # Relationship data
     patient_name: Optional[str] = None  # Will be populated from relationship
+    patient_phone: Optional[str] = None  # Will be populated from relationship
+    patient_city: Optional[str] = None  # Will be populated from relationship
 
 
 class CasesPublic(SQLModel):
