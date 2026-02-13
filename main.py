@@ -175,7 +175,9 @@ if settings.all_cors_origins:
             "https://pms-frontend-ten.vercel.app",
             "http://localhost:5173",
             "http://localhost:8080",
-            "https://475ce336-56fd-48e9-ac15-b78dbe63fed9.lovableproject.com",
+            "http://localhost:3000",
+            "https://herbaldoc.netlify.app",
+            
         ],
         allow_credentials=True,
         allow_methods=["*"],
