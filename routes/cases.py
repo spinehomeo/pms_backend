@@ -154,11 +154,9 @@ def read_cases(
     # Populate patient names
     response_cases = []
     for case in cases:
-        case_dict = {
-            **case.__dict__,
-            "patient_name": case.patient.full_name if case.patient else None
-        }
-        response_cases.append(PatientCasePublic(**case_dict))
+        case_response = PatientCasePublic.model_validate(case)
+        case_response.patient_name = case.patient.full_name if case.patient else None
+        response_cases.append(case_response)
     
     return CasesPublic(data=response_cases, count=count)
 
@@ -182,11 +180,9 @@ def read_case(
     if case.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this case")
     
-    case_dict = {
-        **case.__dict__,
-        "patient_name": case.patient.full_name if case.patient else None
-    }
-    return PatientCasePublic(**case_dict)
+    case_response = PatientCasePublic.model_validate(case)
+    case_response.patient_name = case.patient.full_name if case.patient else None
+    return case_response
 
 
 @router.post("/", response_model=PatientCasePublic)
@@ -239,9 +235,9 @@ def create_case(
     session.add(patient)
     session.commit()
     
-    case_response = case.model_dump()
-    case_response["patient_name"] = case.patient.full_name if case.patient else None
-    return PatientCasePublic(**case_response)
+    case_response = PatientCasePublic.model_validate(case)
+    case_response.patient_name = case.patient.full_name if case.patient else None
+    return case_response
 
 
 @router.put("/{case_id}", response_model=PatientCasePublic)
@@ -278,9 +274,9 @@ def update_case(
     session.commit()
     session.refresh(case)
     
-    case_response = case.model_dump()
-    case_response["patient_name"] = case.patient.full_name if case.patient else None
-    return PatientCasePublic(**case_response)
+    case_response = PatientCasePublic.model_validate(case)
+    case_response.patient_name = case.patient.full_name if case.patient else None
+    return case_response
 
 
 @router.delete("/{case_id}")
