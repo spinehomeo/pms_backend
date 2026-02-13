@@ -130,7 +130,7 @@ def read_appointments(
     statement = (
         select(Appointment)
         .where(Appointment.doctor_id == current_user.id)
-        .order_by(Appointment.appointment_date.asc(), Appointment.appointment_time.asc())
+        .order_by(Appointment.appointment_date.desc(), Appointment.appointment_time.desc())
         .offset(skip)
         .limit(limit)
     )

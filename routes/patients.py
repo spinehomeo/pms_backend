@@ -97,6 +97,7 @@ def read_patients(
     statement = (
         select(Patient)
         .where(Patient.doctor_id == current_user.id)
+        .order_by(Patient.created_date.desc())
         .offset(skip)
         .limit(limit)
     )
