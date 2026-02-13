@@ -179,12 +179,10 @@ def read_appointments(
     # Populate patient details
     response_appointments = []
     for appt in appointments:
-        appt_dict = {
-            **appt.__dict__,
-            "patient_name": appt.patient.full_name if appt.patient else None,
-            "patient_phone": appt.patient.phone if appt.patient else None
-        }
-        response_appointments.append(AppointmentPublic(**appt_dict))
+        appt_response = AppointmentPublic.model_validate(appt)
+        appt_response.patient_name = appt.patient.full_name if appt.patient else None
+        appt_response.patient_phone = appt.patient.phone if appt.patient else None
+        response_appointments.append(appt_response)
     
     return AppointmentsPublic(data=response_appointments, count=count)
 
@@ -218,12 +216,10 @@ def read_today_appointments(
     # Populate patient details
     response_appointments = []
     for appt in appointments:
-        appt_dict = {
-            **appt.__dict__,
-            "patient_name": appt.patient.full_name if appt.patient else None,
-            "patient_phone": appt.patient.phone if appt.patient else None
-        }
-        response_appointments.append(AppointmentPublic(**appt_dict))
+        appt_response = AppointmentPublic.model_validate(appt)
+        appt_response.patient_name = appt.patient.full_name if appt.patient else None
+        appt_response.patient_phone = appt.patient.phone if appt.patient else None
+        response_appointments.append(appt_response)
     
     return AppointmentsPublic(data=response_appointments, count=len(response_appointments))
 
@@ -306,12 +302,10 @@ def read_appointment(
     if appointment.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this appointment")
     
-    appt_dict = {
-        **appointment.__dict__,
-        "patient_name": appointment.patient.full_name if appointment.patient else None,
-        "patient_phone": appointment.patient.phone if appointment.patient else None
-    }
-    return AppointmentPublic(**appt_dict)
+    appt_response = AppointmentPublic.model_validate(appointment)
+    appt_response.patient_name = appointment.patient.full_name if appointment.patient else None
+    appt_response.patient_phone = appointment.patient.phone if appointment.patient else None
+    return appt_response
 
 
 @router.post("/", response_model=AppointmentPublic)
@@ -412,12 +406,10 @@ def create_appointment(
     session.add(patient)
     session.commit()
     
-    appt_dict = {
-        **appointment.__dict__,
-        "patient_name": appointment.patient.full_name if appointment.patient else None,
-        "patient_phone": appointment.patient.phone if appointment.patient else None
-    }
-    return AppointmentPublic(**appt_dict)
+    appt_response = AppointmentPublic.model_validate(appointment)
+    appt_response.patient_name = appointment.patient.full_name if appointment.patient else None
+    appt_response.patient_phone = appointment.patient.phone if appointment.patient else None
+    return appt_response
 
 
 @router.put("/{appointment_id}", response_model=AppointmentPublic)
@@ -504,12 +496,10 @@ def update_appointment(
     session.commit()
     session.refresh(appointment)
     
-    appt_dict = {
-        **appointment.__dict__,
-        "patient_name": appointment.patient.full_name if appointment.patient else None,
-        "patient_phone": appointment.patient.phone if appointment.patient else None
-    }
-    return AppointmentPublic(**appt_dict)
+    appt_response = AppointmentPublic.model_validate(appointment)
+    appt_response.patient_name = appointment.patient.full_name if appointment.patient else None
+    appt_response.patient_phone = appointment.patient.phone if appointment.patient else None
+    return appt_response
 
 
 @router.patch("/{appointment_id}/status")
@@ -537,12 +527,10 @@ def update_appointment_status(
     session.commit()
     session.refresh(appointment)
     
-    appt_dict = {
-        **appointment.__dict__,
-        "patient_name": appointment.patient.full_name if appointment.patient else None,
-        "patient_phone": appointment.patient.phone if appointment.patient else None
-    }
-    return AppointmentPublic(**appt_dict)
+    appt_response = AppointmentPublic.model_validate(appointment)
+    appt_response.patient_name = appointment.patient.full_name if appointment.patient else None
+    appt_response.patient_phone = appointment.patient.phone if appointment.patient else None
+    return appt_response
 
 
 @router.delete("/{appointment_id}")
