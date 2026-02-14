@@ -143,7 +143,7 @@ def get_all_about_doctor(
     "/about-doctor/{about_doctor_id}",
     response_model=AboutDoctorResponse,
     tags=["📄 Web Content Management - 👨‍⚕️ About Doctor"],
-    summary="Update About Doctor Section"
+    summary="Update About Doctor Section",
     description="Update About Doctor section with new qualifications and specializations. Doctor and Admin only."
 )
 def update_about_doctor(
