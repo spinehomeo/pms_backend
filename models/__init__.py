@@ -22,6 +22,15 @@ from .followups_model import FollowUp
 from .doctor_availability_model import DoctorAvailability
 from .doctor_preferences_model import DoctorCaseFieldPreference, DoctorCaseTemplate
 
+# Web content models
+from .web_content_model import (
+    AboutDoctor, Qualification, Specialization,
+    HeroSection, Credential,
+    ServicesAndTreatments, Service,
+    PatientSuccessStories, Testimonial,
+    ContactInformation,
+)
+
 __all__ = [
     # Base models
     "UserBase", "PatientBase", "PatientGender", "PatientCaseBase", 
@@ -35,4 +44,11 @@ __all__ = [
     "DoctorMedicineStock", "Prescription", "PrescriptionMedicine",
     "Appointment", "FollowUp", "DoctorAvailability",
     "DoctorCaseFieldPreference", "DoctorCaseTemplate",
+    
+    # Web content models
+    "AboutDoctor", "Qualification", "Specialization",
+    "HeroSection", "Credential",
+    "ServicesAndTreatments", "Service",
+    "PatientSuccessStories", "Testimonial",
+    "ContactInformation",
 ]

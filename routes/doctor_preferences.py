@@ -88,6 +88,77 @@ def get_doctor_fields(
     ]
 
 
+@router.get("/fields/all", response_model=List[dict])
+def get_all_fields(
+    session: SessionDep,
+    current_user: CurrentUser
+) -> Any:
+    """
+    Get ALL fields for doctor:
+    - Standard fields (enabled or disabled)
+    - Custom fields
+    
+    Frontend can use this to show toggle switches and manage preferences.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can access preferences"
+        )
+
+    # Fetch all doctor preferences
+    preferences = session.exec(
+        select(DoctorCaseFieldPreference).where(
+            DoctorCaseFieldPreference.doctor_id == current_user.id
+        )
+    ).all()
+
+    # Convert to dict for easy lookup
+    pref_dict = {
+        pref.field_name: pref
+        for pref in preferences
+    }
+
+    result = []
+
+    # Add STANDARD fields
+    for i, field in enumerate(STANDARD_FIELDS):
+        pref = pref_dict.get(field["field_name"])
+        result.append({
+            "field_name": field["field_name"],
+            "display_name": field["display_name"],
+            "field_type": field["field_type"],
+            "is_required": pref.is_required if pref else field["default_required"],
+            "is_enabled": pref.is_enabled if pref else False,
+            "position": pref.position if pref else i,
+            "is_custom": False,
+            "config": pref.config if pref else {}
+        })
+
+    # Add CUSTOM fields
+    custom_fields = [
+        pref for pref in preferences
+        if pref.field_name not in [f["field_name"] for f in STANDARD_FIELDS]
+    ]
+
+    for pref in custom_fields:
+        result.append({
+            "field_name": pref.field_name,
+            "display_name": pref.display_name,
+            "field_type": pref.field_type,
+            "is_required": pref.is_required,
+            "is_enabled": pref.is_enabled,
+            "position": pref.position,
+            "is_custom": True,
+            "config": pref.config or {}
+        })
+
+    # Sort by position
+    result.sort(key=lambda x: x["position"])
+
+    return result
+
+
 @router.post("/fields/{field_name}/toggle")
 def toggle_field(
     session: SessionDep,
@@ -211,6 +282,82 @@ def add_custom_field(
             "display_name": display_name,
             "field_type": field_type,
             "is_required": is_required
+        }
+    }
+
+
+@router.put("/fields/custom/{field_name}")
+def edit_custom_field(
+    field_name: str,
+    session: SessionDep,
+    current_user: CurrentUser,
+    display_name: Optional[str] = None,
+    field_type: Optional[str] = None,
+    is_required: Optional[bool] = None,
+    config: Optional[Dict[str, Any]] = None
+) -> Any:
+    """
+    Edit an existing custom field.
+    Only custom fields can be edited.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(
+            status_code=403,
+            detail="Only doctors can edit custom fields"
+        )
+
+    # Prevent editing standard fields
+    is_standard = any(
+        f["field_name"] == field_name
+        for f in STANDARD_FIELDS
+    )
+
+    if is_standard:
+        raise HTTPException(
+            status_code=400,
+            detail="Standard fields cannot be edited"
+        )
+
+    preference = session.exec(
+        select(DoctorCaseFieldPreference).where(
+            DoctorCaseFieldPreference.doctor_id == current_user.id,
+            DoctorCaseFieldPreference.field_name == field_name
+        )
+    ).first()
+
+    if not preference:
+        raise HTTPException(
+            status_code=404,
+            detail="Custom field not found"
+        )
+
+    # Update fields if provided
+    if display_name is not None:
+        preference.display_name = display_name
+
+    if field_type is not None:
+        preference.field_type = field_type
+
+    if is_required is not None:
+        preference.is_required = is_required
+
+    if config is not None:
+        preference.config = config
+
+    preference.updated_at = utc_now()
+
+    session.add(preference)
+    session.commit()
+    session.refresh(preference)
+
+    return {
+        "message": "Custom field updated successfully",
+        "field": {
+            "field_name": preference.field_name,
+            "display_name": preference.display_name,
+            "field_type": preference.field_type,
+            "is_required": preference.is_required,
+            "config": preference.config
         }
     }
 

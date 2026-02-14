@@ -15,6 +15,7 @@ from routes import (
     reports,
     users,
     utils_routes,
+    web_content,
 )
 from core.config import settings
 
@@ -36,6 +37,7 @@ api_router.include_router(medicines.router)
 api_router.include_router(patients.router)
 api_router.include_router(prescriptions.router)
 api_router.include_router(reports.router)
+api_router.include_router(web_content.router)
 
 # Dev-only router
 if settings.ENVIRONMENT == "local":
