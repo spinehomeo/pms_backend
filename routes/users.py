@@ -1499,7 +1499,7 @@ def quick_access_patient(
     # Generate access token for the patient
     access_token_expires = timedelta(days=30)
     access_token = security.create_access_token(
-        patient.id, expires_delta=access_token_expires
+        patient.id, expires_delta=access_token_expires, entity="patient", role="patient"
     )
     
     # Update last login
