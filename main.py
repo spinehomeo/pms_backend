@@ -168,21 +168,41 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # Set all CORS enabled origins
-if settings.all_cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            "https://pms-frontend-ten.vercel.app",
-            "http://localhost:5173",
-            "http://localhost:8080",
-            "http://localhost:3000",
-            "https://herbaldoc.netlify.app",
-            
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Configure allowed origins for cross-origin requests from frontend applications
+allowed_origins = [
+    # Production
+    "https://pms-frontend-ten.vercel.app",
+    "https://site--spinehomeo-backend--sddjlksrw789.code.run",  # Live backend (for development reference)
+    "https://herbaldoc.netlify.app",
+    # Development
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://localhost:3000",
+]
+
+# Add any additional origins from environment if configured
+extra_origins = settings.CORS_ORIGINS if hasattr(settings, 'CORS_ORIGINS') and settings.CORS_ORIGINS else []
+if isinstance(extra_origins, str):
+    allowed_origins.extend([origin.strip() for origin in extra_origins.split(",")])
+elif isinstance(extra_origins, list):
+    allowed_origins.extend(extra_origins)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],
+    expose_headers=["Content-Length", "Content-Type"],
+    max_age=3600,
+)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
