@@ -236,6 +236,40 @@ def delete_about_doctor(
     return None
 
 
+@router.get(
+    "/about-doctor-public/{about_doctor_id}",
+    response_model=AboutDoctorResponse,
+    tags=["🌍 Public Web Content - 👨‍⚕️ About Doctor"],
+    summary="Get About Doctor Section (Public)",
+    description="Retrieve About Doctor section by ID without authentication. Public endpoint for website display."
+)
+def get_about_doctor_public(
+    about_doctor_id: int,
+    session: SessionDep
+) -> Any:
+    """Get About Doctor section by ID - PUBLIC (no authentication required)"""
+    about_doctor = session.get(AboutDoctor, about_doctor_id)
+    if not about_doctor:
+        raise HTTPException(status_code=404, detail="About Doctor section not found")
+    return about_doctor
+
+
+@router.get(
+    "/about-doctor-public",
+    response_model=List[AboutDoctorResponse],
+    tags=["🌍 Public Web Content - 👨‍⚕️ About Doctor"],
+    summary="List All About Doctor Sections (Public)",
+    description="Retrieve all About Doctor sections without authentication. Public endpoint for website display."
+)
+def get_all_about_doctor_public(
+    session: SessionDep
+) -> Any:
+    """Get all About Doctor sections - PUBLIC (no authentication required)"""
+    statement = select(AboutDoctor)
+    about_doctors = session.exec(statement).all()
+    return about_doctors
+
+
 # ==================== HERO SECTION ENDPOINTS ====================
 
 @router.post(
@@ -411,6 +445,40 @@ def delete_hero_section(
     return None
 
 
+@router.get(
+    "/hero-section-public/{hero_id}",
+    response_model=HeroSectionResponse,
+    tags=["🌍 Public Web Content - 🎯 Hero Section"],
+    summary="Get Hero Section (Public)",
+    description="Retrieve Hero Section by ID without authentication. Public endpoint for website display."
+)
+def get_hero_section_public(
+    hero_id: int,
+    session: SessionDep
+) -> Any:
+    """Get Hero Section by ID - PUBLIC (no authentication required)"""
+    hero_section = session.get(HeroSection, hero_id)
+    if not hero_section:
+        raise HTTPException(status_code=404, detail="Hero Section not found")
+    return hero_section
+
+
+@router.get(
+    "/hero-section-public",
+    response_model=List[HeroSectionResponse],
+    tags=["🌍 Public Web Content - 🎯 Hero Section"],
+    summary="List All Hero Sections (Public)",
+    description="Retrieve all Hero Sections without authentication. Public endpoint for website display."
+)
+def get_all_hero_sections_public(
+    session: SessionDep
+) -> Any:
+    """Get all Hero Sections - PUBLIC (no authentication required)"""
+    statement = select(HeroSection)
+    hero_sections = session.exec(statement).all()
+    return hero_sections
+
+
 # ==================== SERVICES & TREATMENTS ENDPOINTS ====================
 
 @router.post(
@@ -580,6 +648,40 @@ def delete_services_section(
     session.commit()
     
     return None
+
+
+@router.get(
+    "/services-public/{services_id}",
+    response_model=ServicesAndTreatmentsResponse,
+    tags=["🌍 Public Web Content - 🏥 Services & Treatments"],
+    summary="Get Services & Treatments Section (Public)",
+    description="Retrieve Services & Treatments section by ID without authentication. Public endpoint for website display."
+)
+def get_services_section_public(
+    services_id: int,
+    session: SessionDep
+) -> Any:
+    """Get Services & Treatments section by ID - PUBLIC (no authentication required)"""
+    services_section = session.get(ServicesAndTreatments, services_id)
+    if not services_section:
+        raise HTTPException(status_code=404, detail="Services section not found")
+    return services_section
+
+
+@router.get(
+    "/services-public",
+    response_model=List[ServicesAndTreatmentsResponse],
+    tags=["🌍 Public Web Content - 🏥 Services & Treatments"],
+    summary="List All Services & Treatments Sections (Public)",
+    description="Retrieve all Services & Treatments sections without authentication. Public endpoint for website display."
+)
+def get_all_services_sections_public(
+    session: SessionDep
+) -> Any:
+    """Get all Services & Treatments sections - PUBLIC (no authentication required)"""
+    statement = select(ServicesAndTreatments)
+    services_sections = session.exec(statement).all()
+    return services_sections
 
 
 # ==================== PATIENT SUCCESS STORIES ENDPOINTS ====================
@@ -755,6 +857,40 @@ def delete_testimonials_section(
     return None
 
 
+@router.get(
+    "/testimonials-public/{testimonials_id}",
+    response_model=PatientSuccessStoriesResponse,
+    tags=["🌍 Public Web Content - ⭐ Testimonials"],
+    summary="Get Patient Success Stories Section (Public)",
+    description="Retrieve Patient Success Stories section by ID without authentication. Public endpoint for website display."
+)
+def get_testimonials_section_public(
+    testimonials_id: int,
+    session: SessionDep
+) -> Any:
+    """Get Patient Success Stories section by ID - PUBLIC (no authentication required)"""
+    stories_section = session.get(PatientSuccessStories, testimonials_id)
+    if not stories_section:
+        raise HTTPException(status_code=404, detail="Testimonials section not found")
+    return stories_section
+
+
+@router.get(
+    "/testimonials-public",
+    response_model=List[PatientSuccessStoriesResponse],
+    tags=["🌍 Public Web Content - ⭐ Testimonials"],
+    summary="List All Patient Success Stories Sections (Public)",
+    description="Retrieve all Patient Success Stories sections without authentication. Public endpoint for website display."
+)
+def get_all_testimonials_sections_public(
+    session: SessionDep
+) -> Any:
+    """Get all Patient Success Stories sections - PUBLIC (no authentication required)"""
+    statement = select(PatientSuccessStories)
+    stories_sections = session.exec(statement).all()
+    return stories_sections
+
+
 # ==================== CONTACT INFORMATION ENDPOINTS ====================
 
 @router.post(
@@ -903,4 +1039,38 @@ def delete_contact_info(
     session.commit()
     
     return None
+
+
+@router.get(
+    "/contact-info-public/{contact_id}",
+    response_model=ContactInformationResponse,
+    tags=["🌍 Public Web Content - 📞 Contact"],
+    summary="Get Contact Information (Public)",
+    description="Retrieve Contact Information by ID without authentication. Public endpoint for website display."
+)
+def get_contact_info_public(
+    contact_id: int,
+    session: SessionDep
+) -> Any:
+    """Get Contact Information by ID - PUBLIC (no authentication required)"""
+    contact_info = session.get(ContactInformation, contact_id)
+    if not contact_info:
+        raise HTTPException(status_code=404, detail="Contact Information not found")
+    return contact_info
+
+
+@router.get(
+    "/contact-info-public",
+    response_model=List[ContactInformationResponse],
+    tags=["🌍 Public Web Content - 📞 Contact"],
+    summary="List All Contact Information (Public)",
+    description="Retrieve all Contact Information records without authentication. Public endpoint for website display."
+)
+def get_all_contact_info_public(
+    session: SessionDep
+) -> Any:
+    """Get all Contact Information records - PUBLIC (no authentication required)"""
+    statement = select(ContactInformation)
+    contact_infos = session.exec(statement).all()
+    return contact_infos
 
