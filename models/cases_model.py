@@ -11,7 +11,7 @@ class PatientCaseBase(SQLModel):
     """Base case model - keeping only required fields"""
     # Required fields
     chief_complaint_patient: str = Field(max_length=500)
-    duration: str = Field(max_length=100)
+    chief_complaint_duration: str = Field(max_length=100)
     
     # Optional standard fields
     physicals: Optional[str] = Field(default=None)
@@ -66,7 +66,7 @@ class PatientCaseCreate(SQLModel):
     
     # Required fields
     chief_complaint_patient: str
-    duration: str
+    chief_complaint_duration: str
     
     # Optional standard fields
     physicals: Optional[str] = None
@@ -83,7 +83,7 @@ class PatientCaseUpdate(SQLModel):
     """API INPUT MODEL for updating cases"""
     # All fields are optional for updates
     chief_complaint_patient: Optional[str] = None
-    duration: Optional[str] = None
+    chief_complaint_duration: Optional[str] = None
     physicals: Optional[str] = None
     noted_complaint_doctor: Optional[str] = None
     peculiar_symptoms: Optional[str] = None
@@ -104,7 +104,7 @@ class PatientCasePublic(SQLModel):
     
     # Core required fields
     chief_complaint_patient: str
-    duration: str
+    chief_complaint_duration: str
     
     # Optional standard fields
     physicals: Optional[str] = None

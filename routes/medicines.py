@@ -11,7 +11,7 @@ from utils.time import utc_isoformat
 from models.medicines_model import (
     Medicine, DoctorMedicineStock, DoctorMedicineStockCreate, DoctorMedicineStockBulk,
     DoctorMedicineStockUpdate, DoctorMedicineStockPublic, MedicinesStockPublic,
-    MedicinePublic, MedicinesPublic, FormEnum, ScaleEnum,
+    MedicinePublic, MedicinesPublic, FormEnum, ScaleEnum, ManufacturerEnum,
     MedicineUsageLog
 )
 from models.prescriptions_model import PrescriptionMedicine

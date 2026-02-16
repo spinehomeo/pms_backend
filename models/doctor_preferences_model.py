@@ -64,7 +64,7 @@ class DoctorCaseTemplate(SQLModel):
 # Standard field definitions that doctors can enable/disable
 STANDARD_FIELDS = [
     {"field_name": "chief_complaint_patient", "display_name": "Chief Complaint (Patient's Words)", "field_type": "textarea", "default_required": True},
-    {"field_name": "duration", "display_name": "Duration", "field_type": "text", "default_required": True},
+    {"field_name": "chief_complaint_duration", "display_name": "Chief Complaint Duration", "field_type": "text", "default_required": True},
     {"field_name": "physicals", "display_name": "Physical Examination", "field_type": "textarea", "default_required": False},
     {"field_name": "noted_complaint_doctor", "display_name": "Noted Complaint (Doctor)", "field_type": "textarea", "default_required": False},
     {"field_name": "peculiar_symptoms", "display_name": "Peculiar Symptoms", "field_type": "textarea", "default_required": False},

@@ -6,22 +6,31 @@ from sqlmodel import Field, Relationship, SQLModel
 from enum import Enum
 
 
+class RepetitionEnum(str, Enum):
+    OD = "OD"
+    BD = "BD"
+    TDS = "TDS"
+    ONCE_WEEKLY = "Once Weekly"
+    ONCE_10_DAYS = "Once in 10 Days"
+    FORTNIGHTLY = "Fortnightly"
+    MONTHLY = "Monthly"
+
+
 class PrescriptionType(str, Enum):
-    ACUTE = "acute"
-    CHRONIC = "chronic"
-    CONSTITUTIONAL = "constitutional"
-    INTERCURRENT = "intercurrent"
-    NOSODE = "nosode"
-    SARCODE = "sarcode"
-    TAUTODE = "tautode"
+    CONSTITUTIONAL = "Constitutional"
+    CLASSICAL = "Classical"
+    INTER_CURRENT = "Inter Current"
+    PURE_BIOCHEMIC = "Pure Bio Chemic"
+    MOTHER_TINCTURE = "Mother Tincture"
+    PATENT = "Patent"
 
 
 # ========== DATABASE MODELS (CRUD) ==========
 class PrescriptionBase(SQLModel):
     """Base prescription model"""
-    prescription_type: PrescriptionType = Field(default=PrescriptionType.CHRONIC)
+    prescription_type: PrescriptionType = Field(default=PrescriptionType.CONSTITUTIONAL)
     dosage: str = Field(max_length=200)
-    duration: str = Field(max_length=100)
+    prescription_duration: str = Field(max_length=100)
     instructions: Optional[str] = Field(default=None)
     follow_up_advice: Optional[str] = Field(default=None)
     dietary_restrictions: Optional[str] = Field(default=None)
@@ -98,7 +107,7 @@ class PrescriptionCreate(PrescriptionBase):
 class PrescriptionUpdate(SQLModel):
     """API INPUT MODEL for updating prescriptions"""
     dosage: Optional[str] = None
-    duration: Optional[str] = None
+    prescription_duration: Optional[str] = None
     instructions: Optional[str] = None
     follow_up_advice: Optional[str] = None
     dietary_restrictions: Optional[str] = None

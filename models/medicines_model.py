@@ -19,9 +19,23 @@ class FormEnum(str, Enum):
     SOM = "SOM"
     BLANKETS = "Blankets"
     BIO_CHEMIC = "Bio Chemic"
-    PLACEBO = "Placebo"
+    HOMOEO_TABS = "Homoeo Tabs"
     GLOBULES = "Globules"
-    DROPS = "Drops"
+    DILUTIONS = "Dilutions"
+
+
+class ManufacturerEnum(str, Enum):
+    SCHWABE = "Schwabe"
+    RECKWEG = "Reckweg"
+    LEMASAR = "Lemasar"
+    DOLISOS = "Dolisos"
+    KAMAL = "Kamal"
+    MASOOD = "Masood"
+    BM = "BM"
+    KENT = "Kent"
+    BROOKS = "Brooks"
+    WARIS_SHAH = "Waris Shah"
+    SELF_PACKING = "Self Packing"
 
 
 class PackingEnum(str, Enum):
@@ -57,7 +71,7 @@ class DoctorMedicineStockBase(SQLModel):
     unit: str = Field(default="packet", max_length=50)
     batch_number: Optional[str] = Field(default=None, max_length=100)
     expiry_date: Optional[date] = Field(default=None)
-    manufacturer: Optional[str] = Field(default=None, max_length=255)
+    manufacturer: Optional[ManufacturerEnum] = Field(default=None)
     purchase_date: date = Field(default_factory=date.today)
     last_used_date: Optional[date] = Field(default=None)
     storage_location: str = Field(default="Clinic Cabinet A", max_length=255)

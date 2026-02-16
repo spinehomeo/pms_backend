@@ -48,6 +48,7 @@ class User(UserBase, table=True):
     medicine_stock: List["DoctorMedicineStock"] = Relationship(back_populates="doctor")
     follow_ups: List["FollowUp"] = Relationship(back_populates="doctor")
     availability_slots: List["DoctorAvailability"] = Relationship(back_populates="doctor")
+    availability_exceptions: List["DoctorAvailabilityException"] = Relationship(back_populates="doctor")
     
     @property
     def is_doctor(self) -> bool:

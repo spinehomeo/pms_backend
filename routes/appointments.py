@@ -16,6 +16,7 @@ from models.appointments_model import (
 from models.doctor_availability_model import DoctorAvailability, DayOfWeek
 from models.patients_model import Patient
 from models.login_model import Message
+from utils.availability_service import is_doctor_available
 
 router = APIRouter(prefix="/appointments", tags=["📅 Appointments"])
 
@@ -36,47 +37,40 @@ def _validate_availability(
 ) -> bool:
     """
     Validate if appointment time falls within doctor's availability slots.
+    Checks for exceptions first, then falls back to regular availability.
     Returns True if valid, raises HTTPException if not.
     """
-    day_name = _get_day_of_week_name(appointment_date)
-    
-    # Get doctor's availability for this day of week
-    availability_slots = session.exec(
-        select(DoctorAvailability).where(
-            and_(
-                DoctorAvailability.doctor_id == doctor_id,
-                DoctorAvailability.day_of_week == day_name,
-                DoctorAvailability.is_available == True
+    # Use the new availability service that checks for exceptions
+    if not is_doctor_available(session, doctor_id, appointment_date, appointment_time):
+        # Get doctor's regular availability for this day to show available times
+        day_name = _get_day_of_week_name(appointment_date)
+        
+        availability_slots = session.exec(
+            select(DoctorAvailability).where(
+                and_(
+                    DoctorAvailability.doctor_id == doctor_id,
+                    DoctorAvailability.day_of_week == day_name,
+                    DoctorAvailability.is_available == True
+                )
             )
-        )
-    ).all()
+        ).all()
+        
+        if availability_slots:
+            available_times = [
+                f"{slot.start_time.strftime('%H:%M')}-{slot.end_time.strftime('%H:%M')}"
+                for slot in availability_slots
+            ]
+            raise HTTPException(
+                status_code=409,
+                detail=f"Appointment time not within doctor's availability. Available: {', '.join(available_times)}"
+            )
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Doctor is not available on {day_name}s or has marked this date as unavailable"
+            )
     
-    if not availability_slots:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Doctor has no available slots on {day_name}s"
-        )
-    
-    # Check if appointment time falls within any availability slot
-    appointment_end = (
-        datetime.combine(date.today(), appointment_time) + 
-        timedelta(minutes=duration_minutes)
-    ).time()
-    
-    for slot in availability_slots:
-        # Check if appointment fits within this slot
-        if appointment_time >= slot.start_time and appointment_end <= slot.end_time:
-            return True
-    
-    # If no matching slot found, show available times
-    available_times = [
-        f"{slot.start_time.strftime('%H:%M')}-{slot.end_time.strftime('%H:%M')}"
-        for slot in availability_slots
-    ]
-    raise HTTPException(
-        status_code=409,
-        detail=f"Appointment time not within doctor's availability. Available: {', '.join(available_times)}"
-    )
+    return True
 
 
 @router.post("/validate-availability")

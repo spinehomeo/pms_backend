@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from api.deps import CurrentUser, SessionDep
 from models.prescriptions_model import (
     Prescription, PrescriptionCreate, PrescriptionPublic, PrescriptionsPublic,
-    PrescriptionMedicine, PrescriptionMedicineCreate
+    PrescriptionMedicine, PrescriptionMedicineCreate, RepetitionEnum, PrescriptionType
 )
 from models.medicines_model import DoctorMedicineStock, Medicine
 from models.patients_model import Patient
@@ -348,7 +348,7 @@ def print_prescription(
                 "potency": pm.stock_used.potency,
                 "form": pm.stock_used.form,
                 "dosage": prescription.dosage,
-                "duration": prescription.duration,
+                "prescription_duration": prescription.prescription_duration,
                 "instructions": prescription.instructions
             }
             for pm in prescription.medicines

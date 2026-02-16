@@ -117,7 +117,10 @@ This software is a **full-stack clinic management system** for homeopathic pract
 - **Potency Scale** tracking (X, C, LM, etc.).
 - **Medicine Kingdom** classification (plant, mineral, animal).
 - **Modalities & Concomitants** recording.
-- **Prescription Types**: acute, chronic, constitutional, intercurrent, nosode, etc.
+- **Prescription Types**: Constitutional, Classical, Inter Current, Pure Bio Chemic, Mother Tincture, Patent.
+- **Medicine Forms**: Diskettes, SOM, Blankets, Bio Chemic, Homoeo Tabs, Globules, Dilutions.
+- **Manufacturers**: Schwabe, Reckweg, Lemasar, Dolisos, Kamal, Masood, BM, Kent, Brooks, Waris Shah, Self Packing.
+- **Dosage Repetition**: OD, BD, TDS, Once Weekly, Once in 10 Days, Fortnightly, Monthly.
 
 ---
 
