@@ -6,7 +6,7 @@ from .users_model import UserBase
 from .patients_model import PatientBase, PatientGender
 from .cases_model import PatientCaseBase
 from .prescriptions_model import PrescriptionBase, PrescriptionType, RepetitionEnum
-from .medicines_model import DoctorMedicineStockBase, FormEnum, ScaleEnum, ManufacturerEnum
+from .medicines_model import FormEnum, ScaleEnum, ManufacturerEnum
 from .appointments_model import AppointmentBase, AppointmentStatus
 from .followups_model import FollowUpBase
 from .doctor_availability_model import DoctorAvailabilityBase, DayOfWeek
@@ -16,7 +16,7 @@ from .doctor_availability_exception_model import DoctorAvailabilityExceptionBase
 from .users_model import User
 from .patients_model import Patient
 from .cases_model import PatientCase
-from .medicines_model import Medicine, DoctorMedicineStock
+from .medicines_model import Medicine, DoctorMedicinePreference
 from .prescriptions_model import Prescription, PrescriptionMedicine
 from .appointments_model import Appointment
 from .followups_model import FollowUp
@@ -37,14 +37,14 @@ __all__ = [
     # Base models
     "UserBase", "PatientBase", "PatientGender", "PatientCaseBase", 
     "PrescriptionBase", "PrescriptionType", "RepetitionEnum",
-    "DoctorMedicineStockBase", "FormEnum", "ScaleEnum", "ManufacturerEnum",
+    "FormEnum", "ScaleEnum", "ManufacturerEnum",
     "AppointmentBase", "AppointmentStatus", "FollowUpBase",
     "DoctorAvailabilityBase", "DayOfWeek",
     "DoctorAvailabilityExceptionBase", "ExceptionType",
     
     # Table models
     "User", "Patient", "PatientCase", "Medicine", 
-    "DoctorMedicineStock", "Prescription", "PrescriptionMedicine",
+    "DoctorMedicinePreference", "Prescription", "PrescriptionMedicine",
     "Appointment", "FollowUp", "DoctorAvailability", "DoctorAvailabilityException",
     "DoctorCaseFieldPreference", "DoctorCaseTemplate",
     

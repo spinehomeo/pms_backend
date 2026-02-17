@@ -70,7 +70,6 @@ class Patient(PatientBase, table=True):
     doctor: "User" = Relationship()  # Doctor who manages this patient (no back_populates - Patient is not in User relationships)
     cases: List["PatientCase"] = Relationship(back_populates="patient")
     appointments: List["Appointment"] = Relationship(back_populates="patient")
-    medicine_usage_logs: List["MedicineUsageLog"] = Relationship(back_populates="patient")
     
     @property
     def age(self) -> Optional[int]:

@@ -230,18 +230,9 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         }
     ]
     
-    from models.medicines_model import DoctorMedicineStock
-    
-    for stock_data in initial_stock:
-        if stock_data["medicine_id"]:
-            stock = DoctorMedicineStock(
-                doctor_id=doctor_id,
-                **stock_data
-            )
-            session.add(stock)
-    
-    session.commit()
-    logger.info(f"Created initial medicine stock for doctor {doctor_id}")
+    # Stock creation not needed with global medicine catalog
+    # Doctors now access shared medicine catalog instead
+    logger.info(f"Skipping stock initialization - using global medicine catalog for doctor {doctor_id}")
 
 
 def init() -> None:
@@ -258,10 +249,6 @@ def init() -> None:
         
         # Create common medicines
         create_common_medicines(session)
-        
-        # Create initial stock for the doctor
-        if doctor_id:
-            create_initial_stock(session, doctor_id)
         
         session.commit()
 

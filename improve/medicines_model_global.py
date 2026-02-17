@@ -1,4 +1,4 @@
-# models/medicines_model.py - GLOBAL CATALOG VERSION
+# models/medicine_models.py - GLOBAL CATALOG VERSION
 import uuid
 from datetime import datetime
 from typing import Optional, List
@@ -109,16 +109,6 @@ class MedicineUpdate(SQLModel):
     is_verified: Optional[bool] = None  # Only admins can update this
 
 
-class QuickAddMedicineRequest(SQLModel):
-    """Quick add medicine during prescription creation"""
-    name: str
-    potency: str
-    potency_scale: ScaleEnum = ScaleEnum.C
-    form: FormEnum = FormEnum.GLOBULES
-    manufacturer: Optional[ManufacturerEnum] = None
-    description: Optional[str] = None
-
-
 # ========== RESPONSE MODELS (API Output) ==========
 class MedicinePublic(MedicineBase):
     """API OUTPUT MODEL for medicine"""
@@ -133,3 +123,13 @@ class MedicinesPublic(SQLModel):
     """API OUTPUT MODEL for list of medicines"""
     data: List[MedicinePublic]
     count: int
+
+
+class QuickAddMedicineRequest(SQLModel):
+    """Quick add medicine during prescription creation"""
+    name: str
+    potency: str
+    potency_scale: ScaleEnum = ScaleEnum.C
+    form: FormEnum = FormEnum.GLOBULES
+    manufacturer: Optional[ManufacturerEnum] = None
+    description: Optional[str] = None

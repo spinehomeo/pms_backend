@@ -10,10 +10,9 @@ from sqlalchemy.orm import selectinload
 from api.deps import CurrentUser, SessionDep
 from models.prescriptions_model import (
     Prescription, PrescriptionCreate, PrescriptionPublic, PrescriptionsPublic,
-    PrescriptionMedicine, PrescriptionMedicineCreate, RepetitionEnum, PrescriptionType,
-    PrescriptionUpdate
+    PrescriptionMedicine, PrescriptionUpdate, PrescriptionMedicineCreate
 )
-from models.medicines_model import Medicine
+from models.medicines_model import Medicine, MedicineCreate, QuickAddMedicineRequest
 from models.patients_model import Patient
 from models.cases_model import PatientCase
 from models.login_model import Message
@@ -96,7 +95,7 @@ def read_prescription(
 
 
 def _get_or_create_medicine(
-    session,
+    session: SessionDep,
     medicine_data: PrescriptionMedicineCreate,
     current_user_id: uuid.UUID
 ) -> int:

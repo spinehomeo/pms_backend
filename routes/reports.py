@@ -15,7 +15,7 @@ from models.cases_model import PatientCase
 from models.prescriptions_model import Prescription, PrescriptionMedicine, PrescriptionType
 from models.appointments_model import Appointment, AppointmentStatus
 from models.followups_model import FollowUp
-from models.medicines_model import DoctorMedicineStock, MedicineUsageLog, Medicine
+from models.medicines_model import Medicine
 
 from models.login_model import Message
 
@@ -75,13 +75,12 @@ def get_patient_history(
             
             medicines_info = []
             for pm in prescription_medicines:
-                stock = session.get(DoctorMedicineStock, pm.stock_used_id)
-                if stock:
+                if pm.medicine:
                     medicines_info.append({
-                        "medicine_name": stock.medicine.name,
-                        "potency": stock.potency,
-                        "form": stock.form,
-                        "quantity_used": pm.quantity_used
+                        "medicine_name": pm.medicine.name,
+                        "potency": f"{pm.medicine.potency}{pm.medicine.potency_scale}",
+                        "form": pm.medicine.form,
+                        "quantity_prescribed": pm.quantity_prescribed
                     })
             
             prescriptions_data.append({
@@ -158,11 +157,10 @@ def get_medicine_usage_report(
     current_user: CurrentUser,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
-    medicine_id: Optional[uuid.UUID] = None,
-    group_by: str = Query("month", regex="^(day|week|month|year)$")
+    medicine_id: Optional[int] = None
 ) -> Any:
     """
-    Generate medicine usage report.
+    Generate medicine usage report based on prescriptions.
     """
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can access reports")
@@ -173,103 +171,50 @@ def get_medicine_usage_report(
     if not to_date:
         to_date = date.today()
     
-    # Get usage logs
-    statement = (
-        select(MedicineUsageLog)
-        .join(DoctorMedicineStock)
+    # Get prescriptions within date range
+    prescriptions = session.exec(
+        select(Prescription)
         .where(
-            DoctorMedicineStock.doctor_id == current_user.id,
-            MedicineUsageLog.used_date.between(from_date, to_date)
+            Prescription.doctor_id == current_user.id,
+            Prescription.prescription_date.between(from_date, to_date)
         )
-    )
+    ).all()
     
-    if medicine_id:
-        statement = statement.where(DoctorMedicineStock.medicine_id == medicine_id)
+    # Get all medicines used
+    medicine_counts = defaultdict(int)
+    all_prescription_medicines = []
     
-    # Aggregate usage via SQL to avoid loading entire table into memory
-    # Map group_by to postgres date_trunc precision
-    if group_by == "day":
-        trunc = 'day'
-    elif group_by == "week":
-        trunc = 'week'
-    elif group_by == "month":
-        trunc = 'month'
-    else:
-        trunc = 'year'
-
-    period_expr = func.date_trunc(trunc, MedicineUsageLog.used_date).label('period')
-
-    stmt = (
-        select(
-            period_expr,
-            Medicine.name.label('medicine_name'),
-            func.sum(MedicineUsageLog.quantity_used).label('quantity'),
-            func.count(func.distinct(MedicineUsageLog.patient_id)).label('unique_patients')
-        )
-        .join(DoctorMedicineStock, DoctorMedicineStock.id == MedicineUsageLog.stock_item_id)
-        .join(Medicine, Medicine.id == DoctorMedicineStock.medicine_id)
-        .where(
-            DoctorMedicineStock.doctor_id == current_user.id,
-            MedicineUsageLog.used_date.between(from_date, to_date)
-        )
-        .group_by(period_expr, Medicine.name)
-        .order_by(period_expr)
-    )
-
-    results = session.exec(stmt).all()
-
-    if not results:
-        return {
-            "message": "No usage data found for the selected period",
-            "date_range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
-            "summary": {},
-            "detailed_data": []
-        }
-
-    detailed = []
-    total_usage = 0
-    patient_set = set()
-    medicine_set = set()
-    trend_map: dict[str, float] = {}
-    top_map: dict[str, float] = {}
-
-    for row in results:
-        period_val = row.period.date().isoformat() if hasattr(row.period, 'date') else str(row.period)
-        medicine_name = row.medicine_name
-        qty = float(row.quantity or 0)
-        unique_patients = int(row.unique_patients or 0)
-
-        detailed.append({
-            'period': period_val,
-            'medicine_name': medicine_name,
-            'quantity': qty,
-            'unique_patients': unique_patients
-        })
-
-        total_usage += qty
-        medicine_set.add(medicine_name)
-        # We don't have patient ids here; unique patient count per period is aggregated
-        top_map[medicine_name] = top_map.get(medicine_name, 0) + qty
-        trend_map[period_val] = trend_map.get(period_val, 0) + qty
-
-    total_patients = sum(r.unique_patients for r in results)
-
-    # Prepare top medicines and trend lists
-    top_medicines = dict(sorted(top_map.items(), key=lambda x: x[1], reverse=True)[:10])
-    trend_data = [{'period': k, 'quantity': v} for k, v in sorted(trend_map.items())]
+    for prescription in prescriptions:
+        prescription_medicines = session.exec(
+            select(PrescriptionMedicine)
+            .where(PrescriptionMedicine.prescription_id == prescription.id)
+        ).all()
+        
+        for pm in prescription_medicines:
+            if pm.medicine:
+                medicine_name = pm.medicine.name
+                medicine_counts[medicine_name] += 1
+                all_prescription_medicines.append({
+                    'medicine_name': medicine_name,
+                    'medicine_id': pm.medicine.id,
+                    'potency': f"{pm.medicine.potency}{pm.medicine.potency_scale}",
+                    'form': pm.medicine.form,
+                    'quantity_prescribed': pm.quantity_prescribed,
+                    'prescription_date': prescription.prescription_date.isoformat()
+                })
+    
+    # Calculate top medicines
+    top_medicines = dict(sorted(medicine_counts.items(), key=lambda x: x[1], reverse=True)[:10])
 
     return {
         "date_range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
-        "group_by": group_by,
         "summary": {
-            "total_usage": float(total_usage),
-            "total_patients": int(total_patients),
-            "total_medicines": int(len(medicine_set)),
-            "average_daily_usage": float(total_usage / max((to_date - from_date).days, 1)),
+            "total_prescriptions": len(prescriptions),
+            "total_medicine_occurrences": sum(medicine_counts.values()),
+            "total_unique_medicines": len(medicine_counts),
             "top_medicines": top_medicines
         },
-        "detailed_data": detailed,
-        "trend_data": trend_data,
+        "detailed_data": all_prescription_medicines,
         "generated_at": utc_isoformat()
     }
 

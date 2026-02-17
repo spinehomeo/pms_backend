@@ -12,6 +12,7 @@ from sqlmodel import select, and_
 from api.deps import SessionDep
 from models.users_model import User, UserRole
 from models.doctor_availability_model import DoctorAvailability
+from models.doctor_availability_exception_model import DoctorAvailabilityException, ExceptionType
 from models.patients_model import Patient
 from models.appointments_model import Appointment, AppointmentStatus
 from models.public_models import (
@@ -21,6 +22,7 @@ from models.public_models import (
     AppointmentBookingResponse,
     PublicBookingRequest,
 )
+from utils.availability_service import get_available_slots_for_day
 
 router = APIRouter(prefix="/public", tags=["🌍 Public"])
 
@@ -103,70 +105,75 @@ def check_availability_public(
     if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
-    # Get day name (0=Monday, 6=Sunday)
-    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    day_name = day_names[check_date.weekday()]
-    
-    # Fetch availability slots for this day
-    availability_slots = session.exec(
-        select(DoctorAvailability).where(
-            DoctorAvailability.doctor_id == doctor_uuid,
-            DoctorAvailability.day_of_week == day_name,
-            DoctorAvailability.is_available == True,
+    # Explicitly check for date-specific exceptions first (safeguard for deployments)
+    exception = session.exec(
+        select(DoctorAvailabilityException).where(
+            and_(
+                DoctorAvailabilityException.doctor_id == doctor_uuid,
+                DoctorAvailabilityException.exception_date == check_date,
+                DoctorAvailabilityException.is_active == True
+            )
         )
-        .order_by(DoctorAvailability.start_time)
-    ).all()
-    
-    if not availability_slots:
+    ).first()
+
+    if exception and exception.exception_type in [ExceptionType.UNAVAILABLE, ExceptionType.HOLIDAY]:
+        # Doctor explicitly unavailable whole day
+        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        day_name = day_names[check_date.weekday()]
         return AvailabilityResponse(
             date=check_date.isoformat(),
             day_of_week=day_name,
             available_slots=[],
-            message="No available slots for this date",
+            message="Doctor is unavailable on this date",
         )
-    
+
+    # Build available 30-minute slots while respecting exceptions
+    slots = get_available_slots_for_day(session, doctor_uuid, check_date, slot_duration=30)
+
     # Get appointments for the day to identify booked slots
     appointments = session.exec(
         select(Appointment).where(
             and_(
                 Appointment.doctor_id == doctor_uuid,
                 Appointment.appointment_date == check_date,
-                Appointment.status.in_([
-                    AppointmentStatus.SCHEDULED,
-                    AppointmentStatus.CONFIRMED
-                ])
+                Appointment.status.in_( [ AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED ] )
             )
         )
     ).all()
-    
+
     # Create set of booked time strings for quick lookup
     booked_times = set()
     for appointment in appointments:
         booked_times.add(appointment.appointment_time.strftime("%H:%M"))
-    
-    # Calculate 30-minute slots from availability windows
+
+    # Convert slots returned by service into API response slots
     available_slots = []
-    for slot in availability_slots:
-        current_time = datetime.combine(check_date, slot.start_time)
-        end_time = datetime.combine(check_date, slot.end_time)
-        
-        while current_time + timedelta(minutes=30) <= end_time:
-            slot_start = current_time.time()
-            slot_start_str = slot_start.strftime("%H:%M")
-            slot_end = (current_time + timedelta(minutes=30)).time()
-            
-            # Check if this slot is booked
-            is_booked = slot_start_str in booked_times
-            
-            available_slots.append(
-                AvailableSlot(
-                    start=slot_start_str,
-                    end=slot_end.strftime("%H:%M"),
-                    duration_minutes=30,
-                    booked=is_booked
-                )
+    for s in slots:
+        start_time = s.get('start_time')
+        end_time = s.get('end_time')
+        if not start_time or not end_time:
+            continue
+        start_str = start_time.strftime("%H:%M")
+        end_str = end_time.strftime("%H:%M")
+        is_booked = start_str in booked_times
+        available_slots.append(
+            AvailableSlot(
+                start=start_str,
+                end=end_str,
+                duration_minutes=30,
+                booked=is_booked
             )
-            current_time += timedelta(minutes=30)
+        )
+
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    day_name = day_names[check_date.weekday()]
+    if not available_slots:
+        return AvailabilityResponse(
+            date=check_date.isoformat(),
+            day_of_week=day_name,
+            available_slots=[],
+            message="No available slots for this date",
+        )
     
     return AvailabilityResponse(
         date=check_date.isoformat(),

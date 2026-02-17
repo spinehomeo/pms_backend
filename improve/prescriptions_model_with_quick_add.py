@@ -1,4 +1,4 @@
-# models/prescriptions_model.py - WITH QUICK-ADD SUPPORT
+# models/prescription_models.py - WITH QUICK-ADD SUPPORT
 import uuid
 from datetime import date
 from typing import Optional, List

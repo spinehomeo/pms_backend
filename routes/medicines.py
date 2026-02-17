@@ -1,471 +1,486 @@
-# api/routes/medicines.py
+# api/routes/medicines.py - GLOBAL CATALOG VERSION
 import uuid
 from typing import Any, List, Optional
-from datetime import date, datetime, timezone
+from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Body
-from sqlmodel import func, select, and_
+from fastapi import APIRouter, HTTPException, Query, Path
+from sqlmodel import func, select, or_
 
 from api.deps import CurrentUser, SessionDep
-from utils.time import utc_isoformat
 from models.medicines_model import (
-    Medicine, DoctorMedicineStock, DoctorMedicineStockCreate, DoctorMedicineStockBulk,
-    DoctorMedicineStockUpdate, DoctorMedicineStockPublic, MedicinesStockPublic,
-    MedicinePublic, MedicinesPublic, FormEnum, ScaleEnum, ManufacturerEnum,
-    MedicineUsageLog
+    Medicine, MedicineCreate, MedicinePublic, MedicinesPublic,
+    MedicineUpdate, DoctorMedicinePreference,
+    ScaleEnum, FormEnum, ManufacturerEnum
 )
-from models.prescriptions_model import PrescriptionMedicine
 from models.login_model import Message
+from models.prescriptions_model import PrescriptionMedicine
+from models.users_model import User
 
 router = APIRouter(prefix="/medicines", tags=["💊 Medicines"])
 
 
-@router.get("/master", response_model=MedicinesPublic)
-def read_medicines_master(
+@router.get("/all", response_model=MedicinesPublic)
+def read_all_medicines(
     session: SessionDep,
     current_user: CurrentUser,
-    skip: int = 0,
-    limit: int = 100,
-    search: Optional[str] = Query(None, min_length=1, max_length=100),
-    kingdom: Optional[str] = None
 ) -> Any:
     """
-    Retrieve medicine master list.
+    Retrieve ALL medicines from catalog without any filters or pagination.
+    Useful for dropdowns, initial autocomplete load, or full catalog display.
+    
+    Note: Use with caution if catalog is very large (1000+ medicines).
+    For large catalogs, use the paginated /medicines/ endpoint instead.
     """
-    # Both doctors and superusers can access medicine list
-    if not current_user.is_doctor and not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access medicines")
     
-    count_statement = select(func.count()).select_from(Medicine)
+    # Get all medicines, ordered by name and potency
+    statement = select(Medicine).order_by(Medicine.name, Medicine.potency)
+    medicines = session.exec(statement).all()
+    
+    # Get favorites for current doctor to enrich response
+    medicine_ids = [m.id for m in medicines]
+    if medicine_ids:
+        preferences = session.exec(
+            select(DoctorMedicinePreference)
+            .where(
+                DoctorMedicinePreference.doctor_id == current_user.id,
+                DoctorMedicinePreference.medicine_id.in_(medicine_ids)
+            )
+        ).all()
+        
+        pref_map = {p.medicine_id: p.is_favorite for p in preferences}
+        
+        # Add is_favorite to response
+        medicines_with_favorite = []
+        for m in medicines:
+            medicine_data = {
+                "id": m.id,
+                "name": m.name,
+                "description": m.description,
+                "potency": m.potency or "",
+                "potency_scale": m.potency_scale or ScaleEnum.C,
+                "form": m.form or FormEnum.GLOBULES,
+                "manufacturer": m.manufacturer,
+                "created_by_doctor_id": m.created_by_doctor_id,
+                "created_at": m.created_at or datetime.utcnow(),
+                "is_verified": m.is_verified if m.is_verified is not None else False,
+                "is_favorite": pref_map.get(m.id, False)
+            }
+            medicines_with_favorite.append(MedicinePublic(**medicine_data))
+        
+        return MedicinesPublic(data=medicines_with_favorite, count=len(medicines))
+    
+    return MedicinesPublic(data=medicines, count=len(medicines))
+
+# `read_medicines` endpoint removed — use `/medicines/` paginated or `/medicines/search` advanced endpoint instead.
+
+
+@router.get("/search", response_model=MedicinesPublic)
+def advanced_search_medicines(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    name: Optional[str] = Query(None),
+    description: Optional[str] = Query(None),
+    potency: Optional[str] = Query(None),
+    potency_scale: Optional[ScaleEnum] = Query(None),
+    form: Optional[FormEnum] = Query(None),
+    manufacturer: Optional[ManufacturerEnum] = Query(None),
+    created_by: Optional[str] = Query(None, description="UUID or email of creator"),
+    is_verified: Optional[bool] = Query(None),
+    is_favorite: Optional[bool] = Query(None),
+    from_date: Optional[datetime] = Query(None),
+    to_date: Optional[datetime] = Query(None),
+) -> Any:
+    """
+    Advanced search - filter by any field combination
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access medicines")
+    
     statement = select(Medicine).offset(skip).limit(limit)
+    count_statement = select(func.count()).select_from(Medicine)
     
-    if search:
-        search_filter = f"%{search}%"
-        count_statement = count_statement.where(
-            Medicine.name.ilike(search_filter)
-        )
-        statement = statement.where(
-            Medicine.name.ilike(search_filter)
-        )
+    # Apply filters
+    if name:
+        statement = statement.where(Medicine.name.ilike(f"%{name}%"))
+        count_statement = count_statement.where(Medicine.name.ilike(f"%{name}%"))
+    
+    if description:
+        statement = statement.where(Medicine.description.ilike(f"%{description}%"))
+        count_statement = count_statement.where(Medicine.description.ilike(f"%{description}%"))
+    
+    if potency:
+        statement = statement.where(Medicine.potency.ilike(f"%{potency}%"))
+        count_statement = count_statement.where(Medicine.potency.ilike(f"%{potency}%"))
+    
+    if potency_scale:
+        statement = statement.where(Medicine.potency_scale == potency_scale)
+        count_statement = count_statement.where(Medicine.potency_scale == potency_scale)
+    
+    if form:
+        statement = statement.where(Medicine.form == form)
+        count_statement = count_statement.where(Medicine.form == form)
+    
+    if manufacturer:
+        statement = statement.where(Medicine.manufacturer == manufacturer)
+        count_statement = count_statement.where(Medicine.manufacturer == manufacturer)
+    
+    if created_by:
+        # accept either UUID or email/username; try UUID first
+        try:
+            parsed = uuid.UUID(created_by)
+            statement = statement.where(Medicine.created_by_doctor_id == parsed)
+            count_statement = count_statement.where(Medicine.created_by_doctor_id == parsed)
+        except Exception:
+            # treat as email/identifier and lookup user
+            user = session.exec(select(User).where(User.email == created_by)).first()
+            if not user:
+                # no user found -> return empty
+                return MedicinesPublic(data=[], count=0)
+            statement = statement.where(Medicine.created_by_doctor_id == user.id)
+            count_statement = count_statement.where(Medicine.created_by_doctor_id == user.id)
+    
+    if is_verified is not None:
+        statement = statement.where(Medicine.is_verified == is_verified)
+        count_statement = count_statement.where(Medicine.is_verified == is_verified)
+    
+    if from_date:
+        statement = statement.where(Medicine.created_at >= from_date)
+        count_statement = count_statement.where(Medicine.created_at >= from_date)
+    
+    if to_date:
+        statement = statement.where(Medicine.created_at <= to_date)
+        count_statement = count_statement.where(Medicine.created_at <= to_date)
+    
+    # Handle favorites filter
+    if is_favorite is not None:
+        if is_favorite:
+            statement = (
+                statement
+                .join(DoctorMedicinePreference)
+                .where(
+                    DoctorMedicinePreference.doctor_id == current_user.id,
+                    DoctorMedicinePreference.is_favorite == True
+                )
+            )
+            count_statement = (
+                count_statement
+                .join(DoctorMedicinePreference)
+                .where(
+                    DoctorMedicinePreference.doctor_id == current_user.id,
+                    DoctorMedicinePreference.is_favorite == True
+                )
+            )
+        else:
+            # Not favorite or no preference
+            subquery = (
+                select(DoctorMedicinePreference.medicine_id)
+                .where(
+                    DoctorMedicinePreference.doctor_id == current_user.id,
+                    DoctorMedicinePreference.is_favorite == True
+                )
+            )
+            statement = statement.where(Medicine.id.notin_(subquery))
+            count_statement = count_statement.where(Medicine.id.notin_(subquery))
+    
+    statement = statement.order_by(Medicine.name)
     
     count = session.exec(count_statement).one()
     medicines = session.exec(statement).all()
     
+    # Enrich with favorite status
+    medicine_ids = [m.id for m in medicines]
+    if medicine_ids:
+        preferences = session.exec(
+            select(DoctorMedicinePreference)
+            .where(
+                DoctorMedicinePreference.doctor_id == current_user.id,
+                DoctorMedicinePreference.medicine_id.in_(medicine_ids)
+            )
+        ).all()
+        
+        pref_map = {p.medicine_id: p.is_favorite for p in preferences}
+        
+        medicines_with_favorite = []
+        for m in medicines:
+            medicine_data = {
+                "id": m.id,
+                "name": m.name,
+                "description": m.description,
+                "potency": m.potency or "",
+                "potency_scale": m.potency_scale or ScaleEnum.C,
+                "form": m.form or FormEnum.GLOBULES,
+                "manufacturer": m.manufacturer,
+                "created_by_doctor_id": m.created_by_doctor_id,
+                "created_at": m.created_at or datetime.utcnow(),
+                "is_verified": m.is_verified if m.is_verified is not None else False,
+                "is_favorite": pref_map.get(m.id, False)
+            }
+            medicines_with_favorite.append(MedicinePublic(**medicine_data))
+        
+        return MedicinesPublic(data=medicines_with_favorite, count=count)
+    
     return MedicinesPublic(data=medicines, count=count)
 
 
-@router.get("/stock", response_model=MedicinesStockPublic)
-def read_medicine_stock(
-    session: SessionDep,
-    current_user: CurrentUser,
-    skip: int = 0,
-    limit: int = 100,
-    search: Optional[str] = Query(None, min_length=1, max_length=100)
-) -> Any:
-    """
-    Retrieve doctor's medicine stock.
-    
-    Returns all medicine stock for the authenticated doctor.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can access stock")
-    
-    # Base query for doctor's stock
-    count_statement = (
-        select(func.count())
-        .select_from(DoctorMedicineStock)
-        .where(DoctorMedicineStock.doctor_id == current_user.id)
-    )
-    
-    statement = (
-        select(DoctorMedicineStock)
-        .where(DoctorMedicineStock.doctor_id == current_user.id)
-        .offset(skip)
-        .limit(limit)
-    )
-    
-    # Apply search filter if provided
-    if search:
-        search_filter = f"%{search}%"
-        # Join with Medicine for search
-        count_statement = (
-            count_statement
-            .join(Medicine)
-            .where(Medicine.name.ilike(search_filter))
-        )
-        statement = (
-            statement
-            .join(Medicine)
-            .where(Medicine.name.ilike(search_filter))
-        )
-    
-    count = session.exec(count_statement).one()
-    stock_items = session.exec(statement).all()
-    
-    return MedicinesStockPublic(data=stock_items, count=count)
-
-
-@router.get("/stock/{stock_id}", response_model=DoctorMedicineStockPublic)
-def read_stock_item(
-    session: SessionDep,
-    current_user: CurrentUser,
-    stock_id: uuid.UUID
-) -> Any:
-    """
-    Get stock item by ID.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can access stock")
-    
-    stock_item = session.get(DoctorMedicineStock, stock_id)
-    if not stock_item:
-        raise HTTPException(status_code=404, detail="Stock item not found")
-    
-    if stock_item.doctor_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this stock item")
-    
-    return stock_item
-
-
-@router.post("/stock", response_model=DoctorMedicineStockPublic)
-def create_stock_item(
+@router.post("/add", response_model=MedicinePublic)
+def create_medicine(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    stock_in: DoctorMedicineStockCreate
+    medicine_in: MedicineCreate
 ) -> Any:
     """
-    Add new medicine to stock.
+    Add new medicine to global catalog.
+    Any doctor can add medicines, but they need admin verification.
     """
     if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can add to stock")
+        raise HTTPException(status_code=403, detail="Only doctors can add medicines")
     
-    # Verify medicine exists in master
-    medicine = session.get(Medicine, stock_in.medicine_id)
-    if not medicine:
-        raise HTTPException(status_code=404, detail="Medicine not found in master list")
-    
-    # Check if same medicine with same potency and form already exists
+    # Check if medicine already exists (same name + potency + form)
     existing = session.exec(
-        select(DoctorMedicineStock).where(
-            DoctorMedicineStock.doctor_id == current_user.id,
-            DoctorMedicineStock.medicine_id == stock_in.medicine_id,
-            DoctorMedicineStock.potency == stock_in.potency,
-            DoctorMedicineStock.form == stock_in.form
+        select(Medicine)
+        .where(
+            Medicine.name == medicine_in.name,
+            Medicine.potency == medicine_in.potency,
+            Medicine.potency_scale == medicine_in.potency_scale,
+            Medicine.form == medicine_in.form
         )
     ).first()
     
     if existing:
-        # Update existing stock instead of creating new
-        existing.quantity += stock_in.quantity
-        existing.purchase_date = stock_in.purchase_date or date.today()
-        existing.batch_number = stock_in.batch_number or existing.batch_number
-        existing.expiry_date = stock_in.expiry_date or existing.expiry_date
-        existing.manufacturer = stock_in.manufacturer or existing.manufacturer
-        
-        session.add(existing)
-        session.commit()
-        session.refresh(existing)
-        return existing
-    
-    # Create new stock item
-    stock_item = DoctorMedicineStock.model_validate(
-        stock_in,
-        update={"doctor_id": current_user.id}
-    )
-    session.add(stock_item)
-    session.commit()
-    session.refresh(stock_item)
-    return stock_item
-
-
-@router.post(
-    "/stock/bulk",
-    status_code=201,
-    summary="Add multiple medicine stock entries at once"
-)
-def create_medicine_stock_bulk(
-    *,
-    session: SessionDep,
-    current_user: CurrentUser,
-    payload: List[DoctorMedicineStockCreate] = Body(...)
-) -> Any:
-    """
-    Add multiple medicine stock entries in a single request.
-    
-    Send a JSON array directly:
-    ```json
-    [
-      {
-        "potency": "200",
-        "potency_scale": "C",
-        "form": "GLOBULES",
-        "quantity": 100,
-        ...
-      }
-    ]
-    ```
-    
-    - **Accepts**: List of medicine stock items
-    - **Returns**: Count of successfully added items
-    - **Note**: Existing items with same medicine, potency, and form will have quantity updated
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can add to stock")
-    
-    if not payload:
-        raise HTTPException(status_code=400, detail="Empty payload - provide at least one item")
-    
-    if len(payload) > 100:
-        raise HTTPException(status_code=400, detail="Maximum 100 items per bulk request")
-    
-    created_count = 0
-    updated_count = 0
-    
-    for stock_in in payload:
-        # Verify medicine exists in master
-        medicine = session.get(Medicine, stock_in.medicine_id)
-        if not medicine:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Medicine ID {stock_in.medicine_id} not found in master list"
-            )
-        
-        # Check if same medicine with same potency and form already exists
-        existing = session.exec(
-            select(DoctorMedicineStock).where(
-                DoctorMedicineStock.doctor_id == current_user.id,
-                DoctorMedicineStock.medicine_id == stock_in.medicine_id,
-                DoctorMedicineStock.potency == stock_in.potency,
-                DoctorMedicineStock.form == stock_in.form
-            )
-        ).first()
-        
-        if existing:
-            # Update existing stock instead of creating new
-            existing.quantity += stock_in.quantity
-            existing.purchase_date = stock_in.purchase_date or date.today()
-            existing.batch_number = stock_in.batch_number or existing.batch_number
-            existing.expiry_date = stock_in.expiry_date or existing.expiry_date
-            existing.manufacturer = stock_in.manufacturer or existing.manufacturer
-            existing.storage_location = stock_in.storage_location or existing.storage_location
-            existing.is_active = stock_in.is_active if hasattr(stock_in, 'is_active') else True
-            existing.low_stock_threshold = stock_in.low_stock_threshold or existing.low_stock_threshold
-            
-            session.add(existing)
-            updated_count += 1
-        else:
-            # Create new stock item
-            stock_item = DoctorMedicineStock.model_validate(
-                stock_in,
-                update={"doctor_id": current_user.id}
-            )
-            session.add(stock_item)
-            created_count += 1
-    
-    session.commit()
-    
-    return {
-        "message": f"Successfully processed {len(payload)} items",
-        "created": created_count,
-        "updated": updated_count,
-        "total": created_count + updated_count
-    }
-
-
-@router.put("/stock/{stock_id}", response_model=DoctorMedicineStockPublic)
-def update_stock_item(
-    *,
-    session: SessionDep,
-    current_user: CurrentUser,
-    stock_id: uuid.UUID,
-    stock_in: DoctorMedicineStockUpdate
-) -> Any:
-    """
-    Update stock item.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can update stock")
-    
-    stock_item = session.get(DoctorMedicineStock, stock_id)
-    if not stock_item:
-        raise HTTPException(status_code=404, detail="Stock item not found")
-    
-    if stock_item.doctor_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this stock item")
-    
-    update_dict = stock_in.model_dump(exclude_unset=True)
-    stock_item.sqlmodel_update(update_dict)
-    session.add(stock_item)
-    session.commit()
-    session.refresh(stock_item)
-    return stock_item
-
-
-@router.delete("/stock/{stock_id}")
-def delete_stock_item(
-    session: SessionDep,
-    current_user: CurrentUser,
-    stock_id: uuid.UUID
-) -> Message:
-    """
-    Delete stock item.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can delete stock")
-    
-    stock_item = session.get(DoctorMedicineStock, stock_id)
-    if not stock_item:
-        raise HTTPException(status_code=404, detail="Stock item not found")
-    
-    if stock_item.doctor_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this stock item")
-    
-    # Check if stock is being used in any prescriptions
-    usage_count = session.exec(
-        select(func.count())
-        .select_from(PrescriptionMedicine)
-        .where(PrescriptionMedicine.stock_used_id == stock_id)
-    ).one()
-    
-    if usage_count > 0:
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete stock item that is being used in prescriptions. "
-                  "Set is_active to False instead."
+            detail=f"Medicine '{medicine_in.name}' with potency {medicine_in.potency}{medicine_in.potency_scale} and form {medicine_in.form} already exists"
         )
     
-    session.delete(stock_item)
+    # Create medicine
+    medicine_data = medicine_in.model_dump()
+    medicine_data["created_by_doctor_id"] = current_user.id
+    medicine_data["is_verified"] = False  # Needs admin verification
+    
+    medicine = Medicine.model_validate(medicine_data)
+    session.add(medicine)
     session.commit()
-    return Message(message="Stock item deleted successfully")
-
-
-@router.get("/stock/{stock_id}/usage")
-def get_stock_usage(
-    session: SessionDep,
-    current_user: CurrentUser,
-    stock_id: uuid.UUID,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None
-) -> Any:
-    """
-    Get usage history for a stock item.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can access usage history")
+    session.refresh(medicine)
     
-    stock_item = session.get(DoctorMedicineStock, stock_id)
-    if not stock_item or stock_item.doctor_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Stock item not found")
-    
-    statement = select(MedicineUsageLog).where(
-        MedicineUsageLog.stock_item_id == stock_id
+    # Auto-add to doctor's preferences
+    preference = DoctorMedicinePreference(
+        doctor_id=current_user.id,
+        medicine_id=medicine.id,
+        usage_count=0,
+        is_favorite=False
     )
+    session.add(preference)
+    session.commit()
     
-    if from_date:
-        statement = statement.where(MedicineUsageLog.used_date >= from_date)
-    
-    if to_date:
-        statement = statement.where(MedicineUsageLog.used_date <= to_date)
-    
-    usage_logs = session.exec(statement.order_by(MedicineUsageLog.used_date.desc())).all()
-    
-    total_used = sum(log.quantity_used for log in usage_logs)
-    
-    return {
-        "stock_item": stock_item,
-        "usage_logs": usage_logs,
-        "total_used": total_used,
-        "remaining": stock_item.quantity
-    }
+    return medicine
 
 
-@router.get("/alerts/low-stock")
-def get_low_stock_alerts(
-    session: SessionDep,
-    current_user: CurrentUser
-) -> Any:
-    """
-    Get low stock alerts.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can access alerts")
-    
-    statement = (
-        select(DoctorMedicineStock)
-        .where(
-            and_(
-                DoctorMedicineStock.doctor_id == current_user.id,
-                DoctorMedicineStock.is_active == True,
-                DoctorMedicineStock.quantity <= DoctorMedicineStock.low_stock_threshold
-            )
-        )
-    )
-    
-    low_stock_items = session.exec(statement).all()
-    
-    return {
-        "count": len(low_stock_items),
-        "items": low_stock_items,
-        "timestamp": utc_isoformat()
-    }
+# `quick_add_medicine` endpoint removed — quick-add flow is handled via prescriptions creation which creates/returns medicines as needed.
 
 
-@router.get("/alerts/expiring")
-def get_expiring_medicines(
-    session: SessionDep,
-    current_user: CurrentUser,
-    days: int = 30
-) -> Any:
-    """
-    Get medicines expiring soon.
-    """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can access alerts")
-    
-    today = date.today()
-    expiry_threshold = today.replace(day=today.day + days)
-    
-    statement = (
-        select(DoctorMedicineStock)
-        .where(
-            and_(
-                DoctorMedicineStock.doctor_id == current_user.id,
-                DoctorMedicineStock.is_active == True,
-                DoctorMedicineStock.expiry_date != None,
-                DoctorMedicineStock.expiry_date <= expiry_threshold,
-                DoctorMedicineStock.expiry_date >= today
-            )
-        )
-        .order_by(DoctorMedicineStock.expiry_date.asc())
-    )
-    
-    expiring_items = session.exec(statement).all()
-    
-    return {
-        "count": len(expiring_items),
-        "items": expiring_items,
-        "expiry_threshold": expiry_threshold.isoformat(),
-        "timestamp": utc_isoformat()
-    }
-
-
-# ========== GENERIC MEDICINE ROUTE (MUST BE LAST) ==========
-# This route is placed at the end to avoid matching specific routes
 @router.get("/{medicine_id}", response_model=MedicinePublic)
 def read_medicine(
     session: SessionDep,
     current_user: CurrentUser,
-    medicine_id: int
+    medicine_id: int = Path(..., description="Medicine ID")
 ) -> Any:
     """
     Get medicine by ID.
     """
-    if not current_user.is_doctor and not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can access medicines")
     
     medicine = session.get(Medicine, medicine_id)
     if not medicine:
         raise HTTPException(status_code=404, detail="Medicine not found")
     
     return medicine
+
+
+@router.put("/{medicine_id}", response_model=MedicinePublic)
+def update_medicine(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    medicine_id: int,
+    medicine_in: MedicineUpdate
+) -> Any:
+    """
+    Update medicine details.
+    Only the doctor who created it (or admin) can update.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can update medicines")
+    
+    medicine = session.get(Medicine, medicine_id)
+    if not medicine:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+    
+    # Check authorization (creator or admin)
+    if medicine.created_by_doctor_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the creator or admin can update this medicine"
+        )
+    
+    # Update fields
+    update_dict = medicine_in.model_dump(exclude_unset=True)
+    medicine.sqlmodel_update(update_dict)
+    
+    session.add(medicine)
+    session.commit()
+    session.refresh(medicine)
+    
+    return medicine
+
+
+@router.delete("/{medicine_id}")
+def delete_medicine(
+    session: SessionDep,
+    current_user: CurrentUser,
+    medicine_id: int
+) -> Message:
+    """
+    Delete medicine from catalog.
+    Only admin or creator (if not used in prescriptions) can delete.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can delete medicines")
+    
+    medicine = session.get(Medicine, medicine_id)
+    if not medicine:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+    
+    # Check if medicine is used in any prescriptions
+    prescription_count = session.exec(
+        select(func.count())
+        .select_from(PrescriptionMedicine)
+        .where(PrescriptionMedicine.medicine_id == medicine_id)
+    ).one()
+    
+    if prescription_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete medicine. It is used in {prescription_count} prescription(s)"
+        )
+    
+    # Check authorization
+    if medicine.created_by_doctor_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the creator or admin can delete this medicine"
+        )
+    
+    session.delete(medicine)
+    session.commit()
+    
+    return Message(message="Medicine deleted successfully")
+
+
+@router.post("/bulk", response_model=MedicinesPublic)
+def create_medicines_bulk(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    medicines_in: List[MedicineCreate]
+) -> Any:
+    """
+    Add multiple medicines in bulk.
+    Skips duplicates and returns all created medicines.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can add medicines")
+    
+    if not medicines_in:
+        raise HTTPException(status_code=400, detail="No medicines provided")
+    
+    if len(medicines_in) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 medicines per bulk operation")
+    
+    created_medicines = []
+    skipped_count = 0
+    
+    for medicine_in in medicines_in:
+        # Check if medicine already exists
+        existing = session.exec(
+            select(Medicine)
+            .where(
+                Medicine.name == medicine_in.name,
+                Medicine.potency == medicine_in.potency,
+                Medicine.potency_scale == medicine_in.potency_scale,
+                Medicine.form == medicine_in.form
+            )
+        ).first()
+        
+        if existing:
+            skipped_count += 1
+            continue
+        
+        # Create new medicine
+        medicine_data = medicine_in.model_dump()
+        medicine_data["created_by_doctor_id"] = current_user.id
+        medicine_data["is_verified"] = False
+        
+        medicine = Medicine.model_validate(medicine_data)
+        session.add(medicine)
+        created_medicines.append(medicine)
+    
+    session.commit()
+    
+    # Refresh all created medicines to get IDs
+    for medicine in created_medicines:
+        session.refresh(medicine)
+    
+    return MedicinesPublic(
+        data=created_medicines,
+        count=len(created_medicines)
+    )
+
+
+@router.post("/{medicine_id}/favorite")
+def toggle_favorite(
+    session: SessionDep,
+    current_user: CurrentUser,
+    medicine_id: int
+) -> Message:
+    """
+    Toggle medicine as favorite for current doctor.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can mark favorites")
+    
+    medicine = session.get(Medicine, medicine_id)
+    if not medicine:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+    
+    # Check if preference exists
+    preference = session.exec(
+        select(DoctorMedicinePreference)
+        .where(
+            DoctorMedicinePreference.doctor_id == current_user.id,
+            DoctorMedicinePreference.medicine_id == medicine_id
+        )
+    ).first()
+    
+    if preference:
+        # Toggle favorite
+        preference.is_favorite = not preference.is_favorite
+        session.add(preference)
+    else:
+        # Create new preference
+        preference = DoctorMedicinePreference(
+            doctor_id=current_user.id,
+            medicine_id=medicine_id,
+            is_favorite=True
+        )
+        session.add(preference)
+    
+    session.commit()
+    
+    status = "added to" if preference.is_favorite else "removed from"
+    return Message(message=f"Medicine {status} favorites")

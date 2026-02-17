@@ -934,7 +934,6 @@ def get_doctor_stats(session: SessionDep, current_user: CurrentUser) -> Any:
     from models.cases_model import PatientCase
     from models.appointments_model import Appointment
     from models.prescriptions_model import Prescription
-    from models.medicines_model import DoctorMedicineStock
     from datetime import date
     
     if current_user.role != "doctor":
@@ -969,15 +968,6 @@ def get_doctor_stats(session: SessionDep, current_user: CurrentUser) -> Any:
         )
     ).one()
     
-    # Get low stock items
-    low_stock_items = session.exec(
-        select(func.count()).where(
-            DoctorMedicineStock.doctor_id == current_user.id,
-            DoctorMedicineStock.quantity <= DoctorMedicineStock.low_stock_threshold,
-            DoctorMedicineStock.is_active == True
-        )
-    ).one()
-    
     return DoctorStats(
         total_patients=total_patients,
         total_cases=total_cases,
@@ -985,7 +975,6 @@ def get_doctor_stats(session: SessionDep, current_user: CurrentUser) -> Any:
         total_prescriptions=total_prescriptions,
         upcoming_appointments=upcoming_appointments,
         pending_followups=0,  # You can add this calculation if needed
-        low_stock_items=low_stock_items,
         revenue_today=0.0,  # You can add revenue calculations if needed
         revenue_this_month=0.0
     )
