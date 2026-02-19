@@ -73,7 +73,7 @@ class PrescriptionMedicine(SQLModel, table=True):
         nullable=False,
         index=True
     )
-    medicine_id: int = Field(
+    medicine_id: uuid.UUID = Field(
         foreign_key="medicine.id",
         nullable=False,
         index=True
@@ -105,7 +105,7 @@ class PrescriptionMedicineCreate(SQLModel):
     2. Quick-add new medicine: Provide new_medicine
     """
     # Mode 1: Existing medicine
-    medicine_id: Optional[int] = None
+    medicine_id: Optional[uuid.UUID] = None
     
     # Mode 2: Quick-add new medicine
     new_medicine: Optional[QuickAddMedicineData] = None
@@ -140,14 +140,20 @@ class PrescriptionUpdate(SQLModel):
 
 
 # ========== RESPONSE MODELS (API Output) ==========
+class MedicineBasicInfo(SQLModel):
+    """Basic medicine info for prescription response"""
+    id: uuid.UUID
+    name: str
+    potency: str
+    form: str
+
+
 class PrescriptionMedicinePublic(SQLModel):
     """API OUTPUT MODEL for prescription medicines"""
     id: uuid.UUID
     medicine_id: int
     quantity_prescribed: Optional[str] = None
-    medicine_name: Optional[str] = None
-    potency: Optional[str] = None
-    form: Optional[str] = None
+    medicine: MedicineBasicInfo
 
 
 class PrescriptionPublic(PrescriptionBase):

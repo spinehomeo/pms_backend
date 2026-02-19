@@ -46,6 +46,10 @@ def read_prescriptions(
     statement = (
         select(Prescription)
         .where(Prescription.doctor_id == current_user.id)
+        .options(
+            selectinload(Prescription.medicines).selectinload(PrescriptionMedicine.medicine),
+            selectinload(Prescription.case).selectinload(PatientCase.patient)
+        )
         .offset(skip)
         .limit(limit)
         .order_by(Prescription.prescription_date.desc())
@@ -70,7 +74,34 @@ def read_prescriptions(
     count = session.exec(count_statement).one()
     prescriptions = session.exec(statement).all()
     
-    return PrescriptionsPublic(data=prescriptions, count=count)
+    # Build response with patient_name, case_number, and medicines
+    response_data = []
+    for prescription in prescriptions:
+        rx_data = prescription.model_dump(exclude={"medicines"})
+        if prescription.case:
+            rx_data['patient_name'] = prescription.case.patient.full_name if prescription.case.patient else None
+            rx_data['case_number'] = prescription.case.case_number
+        
+        # Convert medicines to response format
+        medicines_list = []
+        for pm in prescription.medicines:
+            medicine_dict = {
+                "id": pm.id,
+                "medicine_id": pm.medicine_id,
+                "quantity_prescribed": pm.quantity_prescribed,
+                "medicine": {
+                    "id": pm.medicine.id,
+                    "name": pm.medicine.name,
+                    "potency": pm.medicine.potency,
+                    "form": pm.medicine.form
+                }
+            }
+            medicines_list.append(medicine_dict)
+        
+        rx_data['medicines'] = medicines_list
+        response_data.append(PrescriptionPublic(**rx_data))
+    
+    return PrescriptionsPublic(data=response_data, count=count)
 
 
 @router.get("/{prescription_id}", response_model=PrescriptionPublic)
@@ -85,21 +116,53 @@ def read_prescription(
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can access prescriptions")
     
-    prescription = session.get(Prescription, prescription_id)
+    statement = (
+        select(Prescription)
+        .where(Prescription.id == prescription_id)
+        .options(
+            selectinload(Prescription.medicines).selectinload(PrescriptionMedicine.medicine),
+            selectinload(Prescription.case).selectinload(PatientCase.patient)
+        )
+    )
+    prescription = session.exec(statement).first()
+    
     if not prescription:
         raise HTTPException(status_code=404, detail="Prescription not found")
     
     if prescription.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this prescription")
     
-    return prescription
+    # Build response with patient_name, case_number, and medicines
+    rx_data = prescription.model_dump(exclude={"medicines"})
+    if prescription.case:
+        rx_data['patient_name'] = prescription.case.patient.full_name if prescription.case.patient else None
+        rx_data['case_number'] = prescription.case.case_number
+    
+    # Convert medicines to response format
+    medicines_list = []
+    for pm in prescription.medicines:
+        medicine_dict = {
+            "id": pm.id,
+            "medicine_id": pm.medicine_id,
+            "quantity_prescribed": pm.quantity_prescribed,
+            "medicine": {
+                "id": pm.medicine.id,
+                "name": pm.medicine.name,
+                "potency": pm.medicine.potency,
+                "form": pm.medicine.form
+            }
+        }
+        medicines_list.append(medicine_dict)
+    
+    rx_data['medicines'] = medicines_list
+    return PrescriptionPublic(**rx_data)
 
 
 def _get_or_create_medicine(
     session,
     medicine_data: PrescriptionMedicineCreate,
     current_user_id: uuid.UUID
-) -> int:
+) -> uuid.UUID:
     """
     Helper function to get existing medicine or create new one.
     Used during prescription creation.
@@ -220,7 +283,42 @@ def create_prescription(
 
     session.commit()
     session.refresh(prescription)
-    return prescription
+    
+    # Reload with eager loading of medicines and case
+    statement = (
+        select(Prescription)
+        .where(Prescription.id == prescription.id)
+        .options(
+            selectinload(Prescription.medicines).selectinload(PrescriptionMedicine.medicine),
+            selectinload(Prescription.case).selectinload(PatientCase.patient)
+        )
+    )
+    prescription = session.exec(statement).one()
+    
+    # Build response with patient_name, case_number, and medicines
+    rx_data = prescription.model_dump(exclude={"medicines"})
+    if prescription.case:
+        rx_data['patient_name'] = prescription.case.patient.full_name if prescription.case.patient else None
+        rx_data['case_number'] = prescription.case.case_number
+    
+    # Convert medicines to response format
+    medicines_list = []
+    for pm in prescription.medicines:
+        medicine_dict = {
+            "id": pm.id,
+            "medicine_id": pm.medicine_id,
+            "quantity_prescribed": pm.quantity_prescribed,
+            "medicine": {
+                "id": pm.medicine.id,
+                "name": pm.medicine.name,
+                "potency": pm.medicine.potency,
+                "form": pm.medicine.form
+            }
+        }
+        medicines_list.append(medicine_dict)
+    
+    rx_data['medicines'] = medicines_list
+    return PrescriptionPublic(**rx_data)
 
 
 @router.put("/{prescription_id}", response_model=PrescriptionPublic)
@@ -279,7 +377,42 @@ def update_prescription(
     session.add(prescription)
     session.commit()
     session.refresh(prescription)
-    return prescription
+    
+    # Reload with eager loading of medicines and case
+    statement = (
+        select(Prescription)
+        .where(Prescription.id == prescription.id)
+        .options(
+            selectinload(Prescription.medicines).selectinload(PrescriptionMedicine.medicine),
+            selectinload(Prescription.case).selectinload(PatientCase.patient)
+        )
+    )
+    prescription = session.exec(statement).one()
+    
+    # Build response with patient_name, case_number, and medicines
+    rx_data = prescription.model_dump(exclude={"medicines"})
+    if prescription.case:
+        rx_data['patient_name'] = prescription.case.patient.full_name if prescription.case.patient else None
+        rx_data['case_number'] = prescription.case.case_number
+    
+    # Convert medicines to response format
+    medicines_list = []
+    for pm in prescription.medicines:
+        medicine_dict = {
+            "id": pm.id,
+            "medicine_id": pm.medicine_id,
+            "quantity_prescribed": pm.quantity_prescribed,
+            "medicine": {
+                "id": pm.medicine.id,
+                "name": pm.medicine.name,
+                "potency": pm.medicine.potency,
+                "form": pm.medicine.form
+            }
+        }
+        medicines_list.append(medicine_dict)
+    
+    rx_data['medicines'] = medicines_list
+    return PrescriptionPublic(**rx_data)
 
 
 @router.delete("/{prescription_id}")

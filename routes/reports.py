@@ -157,7 +157,7 @@ def get_medicine_usage_report(
     current_user: CurrentUser,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
-    medicine_id: Optional[int] = None
+    medicine_id: Optional[uuid.UUID] = None
 ) -> Any:
     """
     Generate medicine usage report based on prescriptions.

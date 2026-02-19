@@ -287,7 +287,7 @@ def create_medicine(
 def read_medicine(
     session: SessionDep,
     current_user: CurrentUser,
-    medicine_id: int = Path(..., description="Medicine ID")
+    medicine_id: uuid.UUID = Path(..., description="Medicine ID")
 ) -> Any:
     """
     Get medicine by ID.
@@ -307,7 +307,7 @@ def update_medicine(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    medicine_id: int,
+    medicine_id: uuid.UUID,
     medicine_in: MedicineUpdate
 ) -> Any:
     """
@@ -343,7 +343,7 @@ def update_medicine(
 def delete_medicine(
     session: SessionDep,
     current_user: CurrentUser,
-    medicine_id: int
+    medicine_id: uuid.UUID
 ) -> Message:
     """
     Delete medicine from catalog.

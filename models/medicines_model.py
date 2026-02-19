@@ -51,7 +51,7 @@ class Medicine(MedicineBase, table=True):
     """DATABASE MODEL for medicine - GLOBAL CATALOG"""
     __tablename__ = "medicine"
     
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     
     # Tracking fields
     created_by_doctor_id: Optional[uuid.UUID] = Field(
@@ -78,7 +78,7 @@ class DoctorMedicinePreference(SQLModel, table=True):
         nullable=False,
         index=True
     )
-    medicine_id: int = Field(
+    medicine_id: uuid.UUID = Field(
         foreign_key="medicine.id",
         nullable=False,
         index=True
@@ -122,7 +122,7 @@ class QuickAddMedicineRequest(SQLModel):
 # ========== RESPONSE MODELS (API Output) ==========
 class MedicinePublic(MedicineBase):
     """API OUTPUT MODEL for medicine"""
-    id: int
+    id: uuid.UUID
     created_by_doctor_id: Optional[uuid.UUID] = None
     created_at: datetime
     is_verified: bool
