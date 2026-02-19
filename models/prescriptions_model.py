@@ -151,7 +151,7 @@ class MedicineBasicInfo(SQLModel):
 class PrescriptionMedicinePublic(SQLModel):
     """API OUTPUT MODEL for prescription medicines"""
     id: uuid.UUID
-    medicine_id: int
+    medicine_id: uuid.UUID
     quantity_prescribed: Optional[str] = None
     medicine: MedicineBasicInfo
 
