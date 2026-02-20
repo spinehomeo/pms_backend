@@ -216,6 +216,27 @@ class EnumService:
             query.order_by(EnumOption.sort_order, EnumOption.created_at)
         ).all()
     
+    @staticmethod
+    def get_all_enum_types_with_doctor_options(
+        session: Session,
+        doctor_id: UUID
+    ) -> dict[str, list[EnumOption]]:
+        """
+        Get all active enum types with their doctor-filtered options.
+        
+        Returns a dict mapping enum_type_key -> list of options visible to doctor.
+        """
+        # Get all active enum types
+        enum_types = EnumService.get_all_enum_types(session, active_only=True)
+        
+        result = {}
+        for enum_type in enum_types:
+            # Get doctor-filtered options for this type
+            options = EnumService.get_doctor_options(session, enum_type.key, doctor_id)
+            result[enum_type.key] = options
+        
+        return result
+    
     # ========================================================================
     # VALIDATION
     # ========================================================================

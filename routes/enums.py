@@ -236,6 +236,41 @@ def delete_option(
 # DOCTOR: View and customize their enum preferences
 # ============================================================================
 
+@router.get("/doctor/all", response_model=dict)
+def list_all_enums_with_options(
+    session: SessionDep,
+    current_user: User = Depends(require_doctor_role),
+) -> dict:
+    """
+    [DOCTOR] Get ALL enum types with their options (filtered by doctor's preferences).
+    
+    Returns:
+    {
+        "AppointmentStatus": [
+            { "id": "...", "value": "Confirmed", "label": "...", ... },
+            { "id": "...", "value": "Pending", "label": "...", ... }
+        ],
+        "PatientGender": [
+            { "id": "...", "value": "Male", "label": "...", ... },
+            ...
+        ]
+    }
+    
+    Use this endpoint in the frontend to populate all available dropdowns at once.
+    All options are filtered by the doctor's preferences (disabled options are excluded).
+    """
+    enum_dict = EnumService.get_all_enum_types_with_doctor_options(
+        session, current_user.id
+    )
+    
+    # Convert to dict of dicts for JSON serialization
+    result = {}
+    for enum_type_key, options in enum_dict.items():
+        result[enum_type_key] = options
+    
+    return result
+
+
 @router.get("/doctor/{enum_type_key}", response_model=list[EnumOptionPublic])
 def list_doctor_options(
     enum_type_key: str,
@@ -251,6 +286,55 @@ def list_doctor_options(
     If doctor has no preferences recorded, all active options are returned.
     """
     return EnumService.get_doctor_options(session, enum_type_key, current_user.id)
+
+
+@router.post("/doctor/{enum_type_key}", response_model=EnumOptionPublic)
+def create_option_as_doctor(
+    enum_type_key: str,
+    payload: EnumOptionCreate,
+    session: SessionDep,
+    current_user: User = Depends(require_doctor_role),
+) -> EnumOption:
+    """
+    [DOCTOR] Add a new option to an enum type.
+    
+    Doctors can contribute new options to shared enum types.
+    The option is automatically enabled for the doctor who creates it.
+    
+    Example:
+    POST /enums/doctor/AppointmentStatus
+    {
+        "value": "Rescheduled",
+        "label": "Rescheduled (Appointment moved to later date)",
+        "sort_order": 3
+    }
+    
+    Raises:
+        400: Enum type not found or option value already exists
+    """
+    try:
+        # Create the option
+        option = EnumService.create_enum_option(
+            session=session,
+            enum_type_key=enum_type_key,
+            value=payload.value,
+            label=payload.label,
+            sort_order=payload.sort_order or 0,
+            created_by=current_user.id,
+            is_system=False,
+        )
+        
+        # Auto-enable this option for the doctor who created it
+        EnumService.set_doctor_preference(
+            session=session,
+            doctor_id=current_user.id,
+            option_id=option.id,
+            is_enabled=True,
+        )
+        
+        return option
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/doctor/preferences/{option_id}", response_model=dict)
