@@ -235,6 +235,151 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
     logger.info(f"Skipping stock initialization - using global medicine catalog for doctor {doctor_id}")
 
 
+def seed_enum_types(session: Session) -> None:
+    """Seed all 10 enum types into the database"""
+    from models.enum_option_model import EnumType
+    
+    ENUM_TYPE_SEEDS = [
+        ("RepetitionEnum", "Repetition", "Prescription repetition frequency"),
+        ("PrescriptionType", "Prescription Type", "Types of homeopathic prescriptions"),
+        ("UserRole", "User Role", "System roles"),
+        ("PatientGender", "Patient Gender", "Gender options for patient profile"),
+        ("ScaleEnum", "Scale", "Medicine potency scale"),
+        ("FormEnum", "Medicine Form", "Physical form of medicine"),
+        ("ManufacturerEnum", "Manufacturer", "Medicine manufacturers"),
+        ("DayOfWeek", "Day of Week", "Days for doctor availability"),
+        ("ExceptionType", "Exception Type", "Availability exception categories"),
+        ("AppointmentStatus", "Appointment Status", "Lifecycle status of appointments"),
+    ]
+    
+    for key, label, description in ENUM_TYPE_SEEDS:
+        existing = session.exec(
+            select(EnumType).where(EnumType.key == key)
+        ).first()
+        
+        if not existing:
+            enum_type = EnumType(
+                key=key,
+                label=label,
+                description=description,
+                is_system=True,
+            )
+            session.add(enum_type)
+            logger.info(f"Created enum type: {key}")
+        else:
+            logger.info(f"Enum type '{key}' already exists")
+    
+    session.commit()
+
+
+def seed_enum_options(session: Session) -> None:
+    """Seed all enum options into the database"""
+    from models.enum_option_model import EnumOption, EnumType
+    
+    ENUM_OPTIONS_SEEDS = {
+        "RepetitionEnum": [
+            ("Once Daily", "Once Daily"),
+            ("Twice Daily", "Twice Daily"),
+            ("Three Times Daily", "Three Times Daily"),
+            ("Four Times Daily", "Four Times Daily"),
+            ("As Needed", "As Needed"),
+            ("Weekly", "Weekly"),
+        ],
+        "PrescriptionType": [
+            ("Constitutional", "Constitutional"),
+            ("Classical", "Classical"),
+            ("Intercurrent", "Intercurrent"),
+            ("Bio Chemic", "Bio Chemic"),
+            ("Mother Tincture", "Mother Tincture"),
+            ("Patent", "Patent"),
+        ],
+        "UserRole": [
+            ("admin", "Admin"),
+            ("doctor", "Doctor"),
+            ("staff", "Staff"),
+        ],
+        "PatientGender": [
+            ("Male", "Male"),
+            ("Female", "Female"),
+            ("Other", "Other"),
+        ],
+        "ScaleEnum": [
+            ("Low", "Low"),
+            ("Medium", "Medium"),
+            ("High", "High"),
+        ],
+        "FormEnum": [
+            ("Tablet", "Tablet"),
+            ("Syrup", "Syrup"),
+            ("Capsule", "Capsule"),
+            ("Injection", "Injection"),
+            ("Drops", "Drops"),
+            ("Globules", "Globules"),
+            ("Powder", "Powder"),
+        ],
+        "ManufacturerEnum": [
+            ("Manufacturer A", "Manufacturer A"),
+            ("Manufacturer B", "Manufacturer B"),
+            ("Local", "Local"),
+        ],
+        "DayOfWeek": [
+            ("Monday", "Monday"),
+            ("Tuesday", "Tuesday"),
+            ("Wednesday", "Wednesday"),
+            ("Thursday", "Thursday"),
+            ("Friday", "Friday"),
+            ("Saturday", "Saturday"),
+            ("Sunday", "Sunday"),
+        ],
+        "ExceptionType": [
+            ("Holiday", "Holiday"),
+            ("Emergency", "Emergency"),
+            ("Personal Leave", "Personal Leave"),
+        ],
+        "AppointmentStatus": [
+            ("Pending", "Pending"),
+            ("Confirmed", "Confirmed"),
+            ("Cancelled", "Cancelled"),
+            ("Completed", "Completed"),
+            ("No Show", "No Show"),
+        ],
+    }
+    
+    for enum_type_key, options in ENUM_OPTIONS_SEEDS.items():
+        # Get the enum type
+        enum_type = session.exec(
+            select(EnumType).where(EnumType.key == enum_type_key)
+        ).first()
+        
+        if not enum_type:
+            logger.warning(f"Enum type '{enum_type_key}' not found, skipping options")
+            continue
+        
+        for i, (value, label) in enumerate(options):
+            existing = session.exec(
+                select(EnumOption).where(
+                    EnumOption.enum_type_id == enum_type.id,
+                    EnumOption.value == value
+                )
+            ).first()
+            
+            if not existing:
+                option = EnumOption(
+                    enum_type_id=enum_type.id,
+                    enum_type=enum_type_key,
+                    value=value,
+                    label=label,
+                    sort_order=i,
+                    is_system=True,
+                )
+                session.add(option)
+                logger.info(f"Created option: {enum_type_key} -> {value}")
+            else:
+                logger.info(f"Option '{value}' already exists for {enum_type_key}")
+    
+    session.commit()
+
+
 def init() -> None:
     """Initialize database with essential data"""
     with Session(engine) as session:
@@ -249,6 +394,10 @@ def init() -> None:
         
         # Create common medicines
         create_common_medicines(session)
+        
+        # Seed enum types and options
+        seed_enum_types(session)
+        seed_enum_options(session)
         
         session.commit()
 

@@ -4,25 +4,14 @@ from datetime import date, datetime, time
 from typing import Optional, List
 from sqlmodel import Field, Relationship, SQLModel
 import sqlalchemy as sa
-from enum import Enum
 
 
-class AppointmentStatus(str, Enum):
-    SCHEDULED = "scheduled"
-    CONFIRMED = "confirmed"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    NO_SHOW = "no_show"
-
-
-# ========== DATABASE MODELS (CRUD) ==========
 class AppointmentBase(SQLModel):
     """Base appointment model"""
     appointment_date: date
     appointment_time: time
     duration_minutes: int = Field(default=30, ge=15)
-    status: AppointmentStatus = Field(default=AppointmentStatus.SCHEDULED)
+    status: str = Field(default="scheduled")
     consultation_type: str = Field(default="first", max_length=50)
     reason: Optional[str] = Field(default=None)
     notes: Optional[str] = Field(default=None)
@@ -68,7 +57,7 @@ class AppointmentUpdate(SQLModel):
     appointment_date: Optional[date] = None
     appointment_time: Optional[time] = None
     duration_minutes: Optional[int] = None
-    status: Optional[AppointmentStatus] = None
+    status: Optional[str] = None
     consultation_type: Optional[str] = None
     reason: Optional[str] = None
     notes: Optional[str] = None

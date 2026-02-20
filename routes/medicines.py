@@ -10,7 +10,6 @@ from api.deps import CurrentUser, SessionDep
 from models.medicines_model import (
     Medicine, MedicineCreate, MedicinePublic, MedicinesPublic,
     MedicineUpdate, DoctorMedicinePreference,
-    ScaleEnum, FormEnum, ManufacturerEnum
 )
 from models.login_model import Message
 from models.prescriptions_model import PrescriptionMedicine
@@ -59,8 +58,8 @@ def read_all_medicines(
                 "name": m.name,
                 "description": m.description,
                 "potency": m.potency or "",
-                "potency_scale": m.potency_scale or ScaleEnum.C,
-                "form": m.form or FormEnum.GLOBULES,
+                "potency_scale": m.potency_scale or "C",
+                "form": m.form or "Globules",
                 "manufacturer": m.manufacturer,
                 "created_by_doctor_id": m.created_by_doctor_id,
                 "created_at": m.created_at or datetime.utcnow(),
@@ -85,9 +84,9 @@ def advanced_search_medicines(
     name: Optional[str] = Query(None),
     description: Optional[str] = Query(None),
     potency: Optional[str] = Query(None),
-    potency_scale: Optional[ScaleEnum] = Query(None),
-    form: Optional[FormEnum] = Query(None),
-    manufacturer: Optional[ManufacturerEnum] = Query(None),
+    potency_scale: Optional[str] = Query(None),
+    form: Optional[str] = Query(None),
+    manufacturer: Optional[str] = Query(None),
     created_by: Optional[str] = Query(None, description="UUID or email of creator"),
     is_verified: Optional[bool] = Query(None),
     is_favorite: Optional[bool] = Query(None),
@@ -211,8 +210,8 @@ def advanced_search_medicines(
                 "name": m.name,
                 "description": m.description,
                 "potency": m.potency or "",
-                "potency_scale": m.potency_scale or ScaleEnum.C,
-                "form": m.form or FormEnum.GLOBULES,
+                "potency_scale": m.potency_scale or "C",
+                "form": m.form or "Globules",
                 "manufacturer": m.manufacturer,
                 "created_by_doctor_id": m.created_by_doctor_id,
                 "created_at": m.created_at or datetime.utcnow(),
@@ -347,10 +346,20 @@ def delete_medicine(
 ) -> Message:
     """
     Delete medicine from catalog.
-    Only admin or creator (if not used in prescriptions) can delete.
+    Only admin/superuser can delete medicines.
     """
-    if not current_user.is_doctor:
-        raise HTTPException(status_code=403, detail="Only doctors can delete medicines")
+    # Check authorization - only superusers can delete medicines
+    if current_user.is_doctor or current_user.is_staff:
+        raise HTTPException(
+            status_code=422,
+            detail="Doctor and staff cannot delete medicines"
+        )
+    
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=422,
+            detail="Only admins can delete medicines"
+        )
     
     medicine = session.get(Medicine, medicine_id)
     if not medicine:
@@ -367,13 +376,6 @@ def delete_medicine(
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete medicine. It is used in {prescription_count} prescription(s)"
-        )
-    
-    # Check authorization
-    if medicine.created_by_doctor_id != current_user.id and not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="Only the creator or admin can delete this medicine"
         )
     
     session.delete(medicine)
@@ -446,7 +448,7 @@ def create_medicines_bulk(
 def toggle_favorite(
     session: SessionDep,
     current_user: CurrentUser,
-    medicine_id: int
+    medicine_id: uuid.UUID
 ) -> Message:
     """
     Toggle medicine as favorite for current doctor.

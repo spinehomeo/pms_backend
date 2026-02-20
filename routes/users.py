@@ -20,7 +20,7 @@ from core import security
 from core.config import settings
 from core.security import get_password_hash, verify_password
 from models.login_model import Message
-from models.patients_model import Patient, PatientPublic, PatientGender
+from models.patients_model import Patient, PatientPublic
 from models.users_model import (
     User,
     UserCreate,
@@ -31,7 +31,6 @@ from models.users_model import (
     UserUpdateMe,
     UpdatePassword,
     DoctorStats,
-    UserRole,
     ApprovalRequest,
     ApprovalResponse,
     ApprovalStats,
@@ -1075,15 +1074,15 @@ def register_user(session: SessionDep, user_in: UserRegister) -> Any:
         password=user_in.password,
         full_name=user_in.full_name,
         phone=user_in.phone,
-        registration_number=user_in.registration_number if user_in.role == UserRole.DOCTOR else None,
-        specialization=user_in.specialization if user_in.role == UserRole.DOCTOR else None,
+        registration_number=user_in.registration_number if user_in.role == "doctor" else None,
+        specialization=user_in.specialization if user_in.role == "doctor" else None,
         role=user_in.role  # Use role from user input (doctor or staff)
     )
     
     user = crud.create_user(session=session, user_create=user_create)
     
     # Store additional fields (doctor-specific)
-    if user_in.role == UserRole.DOCTOR:
+    if user_in.role == "doctor":
         user.clinic_name = user_in.clinic_name
         user.clinic_address = user_in.clinic_address
     
@@ -1303,7 +1302,7 @@ def register_patient_simple(
         full_name=patient_in.full_name,
         phone=patient_in.phone,
         cnic=unique_cnic,  # Unique CNIC placeholder
-        gender=PatientGender(patient_in.gender),  # Use provided gender
+        gender=patient_in.gender,  # Use provided gender
         hashed_password=get_password_hash(patient_in.phone),  # Phone is the password
     )
     
@@ -1451,7 +1450,7 @@ def quick_access_patient(
             full_name=patient_in.full_name,
             phone=patient_in.phone,
             cnic=unique_cnic,  # Unique CNIC placeholder
-            gender=PatientGender(patient_in.gender),
+            gender=patient_in.gender,
             hashed_password=get_password_hash(patient_in.phone),
         )
         session.add(patient)

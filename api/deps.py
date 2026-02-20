@@ -88,11 +88,11 @@ def get_current_user(
     return user
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUser = Annotated[User, Security(get_current_user)]
 
 
 def get_current_active_superuser(
-    current_user: User = Security(get_current_user)
+    current_user: CurrentUser
 ) -> User:
     """
     Dependency for superuser-only endpoints.
@@ -118,7 +118,7 @@ def get_current_active_superuser(
 
 
 def require_doctor_role(
-    current_user: User = Security(get_current_user)
+    current_user: CurrentUser
 ) -> User:
     """
     Dependency for doctor-only endpoints.
@@ -144,7 +144,7 @@ def require_doctor_role(
 
 
 def require_staff_role(
-    current_user: User = Security(get_current_user)
+    current_user: CurrentUser
 ) -> User:
     """
     Dependency for staff-only endpoints.
@@ -192,7 +192,7 @@ def require_roles(*allowed_roles: str):
         HTTPException(403): User's role not in allowed_roles
     """
     def role_checker(
-        current_user: User = Security(get_current_user)
+        current_user: CurrentUser
     ) -> User:
         if current_user.role not in allowed_roles:
             raise HTTPException(

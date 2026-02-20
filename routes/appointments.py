@@ -11,7 +11,7 @@ from sqlmodel import func, select, and_, or_, text
 from api.deps import CurrentUser, SessionDep, CurrentPatient
 from models.appointments_model import (
     Appointment, AppointmentCreate, AppointmentUpdate, AppointmentPublic, 
-    AppointmentsPublic, AppointmentStatus
+    AppointmentsPublic
 )
 from models.doctor_availability_model import DoctorAvailability, DayOfWeek
 from models.patients_model import Patient
@@ -103,7 +103,7 @@ def read_appointments(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     date_filter: Optional[date] = Query(None),
-    status: Optional[AppointmentStatus] = Query(None),
+    status: Optional[str] = Query(None),
     patient_id: Optional[uuid.UUID] = Query(None),
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
@@ -241,8 +241,8 @@ def read_upcoming_appointments(
                 Appointment.appointment_date >= today,
                 Appointment.appointment_date <= future_date,
                 Appointment.status.in_([
-                    AppointmentStatus.SCHEDULED,
-                    AppointmentStatus.CONFIRMED
+                    "scheduled",
+                    "confirmed"
                 ])
             )
         )
@@ -348,8 +348,8 @@ def create_appointment(
                 Appointment.doctor_id == current_user.id,
                 Appointment.appointment_date == appointment_in.appointment_date,
                 Appointment.status.in_([
-                    AppointmentStatus.SCHEDULED,
-                    AppointmentStatus.CONFIRMED
+                    "scheduled",
+                    "confirmed"
                 ]),
                 or_(
                     # New appointment starts during existing appointment
@@ -453,8 +453,8 @@ def update_appointment(
                     Appointment.appointment_date == check_date,
                     Appointment.id != appointment_id,
                     Appointment.status.in_([
-                        AppointmentStatus.SCHEDULED,
-                        AppointmentStatus.CONFIRMED
+                        "scheduled",
+                        "confirmed"
                     ]),
                     or_(
                         and_(
@@ -501,7 +501,7 @@ def update_appointment_status(
     session: SessionDep,
     current_user: CurrentUser,
     appointment_id: uuid.UUID,
-    status: AppointmentStatus
+    status: str
 ) -> AppointmentPublic:
     """
     Update appointment status.
@@ -594,8 +594,8 @@ def check_availability(
                 Appointment.doctor_id == current_user.id,
                 Appointment.appointment_date == check_date,
                 Appointment.status.in_([
-                    AppointmentStatus.SCHEDULED,
-                    AppointmentStatus.CONFIRMED
+                    "scheduled",
+                    "confirmed"
                 ])
             )
         ).order_by(Appointment.appointment_time.asc())
@@ -698,9 +698,9 @@ def book_appointment_patient(
         )
     
     # Verify doctor exists and is active
-    from models.users_model import User, UserRole
+    from models.users_model import User
     doctor = session.get(User, doctor_id)
-    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+    if not doctor or doctor.role != "doctor" or not doctor.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
     # Verify patient belongs to this doctor
@@ -736,8 +736,8 @@ def book_appointment_patient(
                 Appointment.doctor_id == doctor_id,
                 Appointment.appointment_date == appointment_date,
                 Appointment.status.in_([
-                    AppointmentStatus.SCHEDULED,
-                    AppointmentStatus.CONFIRMED
+                    "scheduled",
+                    "confirmed"
                 ]),
                 or_(
                     and_(
@@ -769,7 +769,7 @@ def book_appointment_patient(
         appointment_date=appointment_date,
         appointment_time=appointment_time_clean,
         duration_minutes=30,
-        status=AppointmentStatus.SCHEDULED,
+        status="scheduled",
         consultation_type="follow_up",
         reason=reason,
     )

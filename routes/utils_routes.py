@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from models.users_model import User
 from pydantic.networks import EmailStr
 
 from api.deps import get_current_active_superuser
@@ -69,7 +70,7 @@ async def health_check() -> dict[str, Any]:
 
 
 @router.get("/system-info/")
-async def system_info(current_user: Any = Depends(get_current_active_superuser)) -> dict[str, Any]:
+async def system_info(current_user: User = Depends(get_current_active_superuser)) -> dict[str, Any]:
     """
     Get system information (admin only).
     """

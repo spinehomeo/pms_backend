@@ -17,7 +17,6 @@ from models.doctor_availability_model import (
     DoctorAvailabilitiesPublic,
     DoctorScheduleResponse,
     AvailableSlotCheck,
-    DayOfWeek,
 )
 from models.doctor_availability_exception_model import (
     DoctorAvailabilityException,
@@ -25,9 +24,8 @@ from models.doctor_availability_exception_model import (
     DoctorAvailabilityExceptionUpdate,
     DoctorAvailabilityExceptionPublic,
     DoctorAvailabilityExceptionsPublic,
-    ExceptionType,
 )
-from models.appointments_model import Appointment, AppointmentStatus
+from models.appointments_model import Appointment
 from models.patients_model import Patient
 from models.login_model import Message
 
@@ -242,8 +240,8 @@ def get_doctor_schedule_with_patient_info(
                     Appointment.doctor_id == current_user.id,
                     Appointment.appointment_date == slot_date,
                     Appointment.status.in_([
-                        AppointmentStatus.SCHEDULED,
-                        AppointmentStatus.CONFIRMED
+                        "scheduled",
+                        "confirmed"
                     ])
                 )
             )
@@ -313,7 +311,7 @@ def create_availability_exception(
         )
     
     # Validate time range for custom hours
-    if exception_in.exception_type == ExceptionType.CUSTOM_HOURS:
+    if exception_in.exception_type == "custom_hours":
         if not exception_in.start_time or not exception_in.end_time:
             raise HTTPException(
                 status_code=400,
@@ -362,7 +360,7 @@ def list_availability_exceptions(
     current_user: CurrentUser,
     start_date: Optional[date] = Query(None, description="Filter from this date"),
     end_date: Optional[date] = Query(None, description="Filter until this date"),
-    exception_type: Optional[ExceptionType] = Query(None),
+    exception_type: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000)
 ) -> Any:
@@ -463,7 +461,7 @@ def update_availability_exception(
     new_start = exception_in.start_time or exception.start_time
     new_end = exception_in.end_time or exception.end_time
     
-    if new_type == ExceptionType.CUSTOM_HOURS:
+    if new_type == "custom_hours":
         if not new_start or not new_end:
             raise HTTPException(
                 status_code=400,
@@ -527,13 +525,13 @@ def check_available_slots_for_day(
     Patients can use this to see what slots are available to book with a doctor.
     If doctor_id is not provided, uses current authenticated doctor.
     """
-    # Convert day name to enum
-    try:
-        day_of_week = DayOfWeek(day_name.lower())
-    except ValueError:
+    # Convert day name to string for validation
+    day_name_lower = day_name.lower()
+    valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    if day_name_lower not in valid_days:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid day. Must be one of: {', '.join([d.value for d in DayOfWeek])}"
+            detail=f"Invalid day. Must be one of: {', '.join(valid_days)}"
         )
     
     # Get doctor's availability for this day
@@ -541,7 +539,7 @@ def check_available_slots_for_day(
         select(DoctorAvailability).where(
             and_(
                 DoctorAvailability.doctor_id == doctor_id if doctor_id else True,
-                DoctorAvailability.day_of_week == day_of_week,
+                DoctorAvailability.day_of_week == day_name_lower,
                 DoctorAvailability.is_available == True
             )
         ).order_by(DoctorAvailability.start_time)
@@ -571,8 +569,8 @@ def check_available_slots_for_day(
                     Appointment.doctor_id == slot.doctor_id,
                     Appointment.appointment_date == slot_date,
                     Appointment.status.in_([
-                        AppointmentStatus.SCHEDULED,
-                        AppointmentStatus.CONFIRMED
+                        "scheduled",
+                        "confirmed"
                     ])
                 )
             )
@@ -676,7 +674,7 @@ def get_doctor_availability_slot(
 def get_doctor_availability(
     session: SessionDep,
     current_user: CurrentUser,
-    day: Optional[DayOfWeek] = Query(None),
+    day: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
 ) -> Any:
@@ -837,7 +835,7 @@ def delete_doctor_availability(
 def delete_all_doctor_availability(
     session: SessionDep,
     current_user: CurrentUser,
-    day: Optional[DayOfWeek] = Query(None)
+    day: Optional[str] = Query(None)
 ) -> Message:
     """
     Delete all availability slots for the doctor.

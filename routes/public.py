@@ -10,11 +10,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select, and_
 
 from api.deps import SessionDep
-from models.users_model import User, UserRole
+from models.users_model import User
 from models.doctor_availability_model import DoctorAvailability
-from models.doctor_availability_exception_model import DoctorAvailabilityException, ExceptionType
+from models.doctor_availability_exception_model import DoctorAvailabilityException
 from models.patients_model import Patient
-from models.appointments_model import Appointment, AppointmentStatus
+from models.appointments_model import Appointment
 from models.public_models import (
     AvailabilityResponse,
     AvailableSlot,
@@ -40,7 +40,7 @@ def list_doctors_public(
     """
     statement = (
         select(User)
-        .where(User.role == UserRole.DOCTOR, User.is_active == True)
+        .where(User.role == "doctor", User.is_active == True)
         .offset(skip)
         .limit(limit)
     )
@@ -72,7 +72,7 @@ def get_doctor_public(
         raise HTTPException(status_code=400, detail="Invalid doctor ID format")
     
     doctor = session.get(User, doctor_uuid)
-    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+    if not doctor or doctor.role != "doctor" or not doctor.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
     return DoctorPublicInfo(
@@ -102,7 +102,7 @@ def check_availability_public(
     
     # Verify doctor exists and is active
     doctor = session.get(User, doctor_uuid)
-    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+    if not doctor or doctor.role != "doctor" or not doctor.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
     # Explicitly check for date-specific exceptions first (safeguard for deployments)
@@ -116,7 +116,7 @@ def check_availability_public(
         )
     ).first()
 
-    if exception and exception.exception_type in [ExceptionType.UNAVAILABLE, ExceptionType.HOLIDAY]:
+    if exception and exception.exception_type in ["unavailable", "holiday"]:
         # Doctor explicitly unavailable whole day
         day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         day_name = day_names[check_date.weekday()]
@@ -136,7 +136,7 @@ def check_availability_public(
             and_(
                 Appointment.doctor_id == doctor_uuid,
                 Appointment.appointment_date == check_date,
-                Appointment.status.in_( [ AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED ] )
+                Appointment.status.in_(["scheduled", "confirmed"])
             )
         )
     ).all()
@@ -221,7 +221,7 @@ def book_appointment_public(
     
     # Verify doctor exists and is active
     doctor = session.get(User, doctor_uuid)
-    if not doctor or doctor.role != UserRole.DOCTOR or not doctor.is_active:
+    if not doctor or doctor.role != "doctor" or not doctor.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
     # Validate appointment time against doctor's availability
@@ -280,7 +280,7 @@ def book_appointment_public(
         appointment_date=booking_data.appointment_date,
         appointment_time=booking_data.appointment_time,
         duration_minutes=30,
-        status=AppointmentStatus.SCHEDULED,
+        status="scheduled",
         consultation_type="first",
         reason=booking_data.reason,
     )

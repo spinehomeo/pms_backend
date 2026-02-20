@@ -12,8 +12,8 @@ from utils.time import utc_isoformat
 
 from models.patients_model import Patient
 from models.cases_model import PatientCase
-from models.prescriptions_model import Prescription, PrescriptionMedicine, PrescriptionType
-from models.appointments_model import Appointment, AppointmentStatus
+from models.prescriptions_model import Prescription, PrescriptionMedicine
+from models.appointments_model import Appointment
 from models.followups_model import FollowUp
 from models.medicines_model import Medicine
 
@@ -342,8 +342,8 @@ def get_appointment_statistics(
         weekday_distribution = {}
 
     # Cancellation and no-show rates
-    cancelled = status_distribution.get(AppointmentStatus.CANCELLED, 0)
-    no_shows = status_distribution.get(AppointmentStatus.NO_SHOW, 0)
+    cancelled = status_distribution.get("cancelled", 0)
+    no_shows = status_distribution.get("no_show", 0)
     cancellation_rate = (cancelled / total_appointments * 100) if total_appointments > 0 else 0
     no_show_rate = (no_shows / total_appointments * 100) if total_appointments > 0 else 0
 
@@ -506,7 +506,7 @@ def get_financial_summary(
         .where(
             Appointment.doctor_id == current_user.id,
             Appointment.appointment_date.between(from_date, to_date),
-            Appointment.status == AppointmentStatus.COMPLETED
+            Appointment.status == "completed"
         )
     ).all()
     

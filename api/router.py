@@ -5,6 +5,7 @@ from routes import (
     cases,
     doctor_availability,
     doctor_preferences,
+    enums,
     followups,
     login,
     medicines,
@@ -27,6 +28,7 @@ api_router.include_router(users.router)
 api_router.include_router(doctor_availability.router)
 api_router.include_router(public.router)
 api_router.include_router(utils_routes.router)
+api_router.include_router(enums.router)
 
 # Feature routers
 api_router.include_router(appointments.router)

@@ -27,7 +27,7 @@ from models.patients_model import (
     Patient, PatientCreate, PatientUpdate, PatientPublic, PatientsPublic,
     PatientGender,
 )
-from models.appointments_model import Appointment, AppointmentStatus, AppointmentPublic
+from models.appointments_model import Appointment, AppointmentPublic
 from models.cases_model import PatientCase
 from models.login_model import Message
 
@@ -659,7 +659,7 @@ This endpoint is accessible to authenticated patients only.
 def get_patient_appointments(
     session: SessionDep,
     current_user: CurrentPatient,
-    status: Optional[AppointmentStatus] = Query(None, description="Filter by status"),
+    status: Optional[str] = Query(None, description="Filter by status"),
     from_date: Optional[date] = Query(None, description="From date (YYYY-MM-DD)"),
     to_date: Optional[date] = Query(None, description="To date (YYYY-MM-DD)"),
     limit: int = Query(50, ge=1, le=500, description="Max results"),
@@ -785,8 +785,8 @@ def get_upcoming_patient_appointments(
                 Appointment.appointment_date >= today,
                 Appointment.appointment_date <= future_date,
                 Appointment.status.in_([
-                    AppointmentStatus.SCHEDULED,
-                    AppointmentStatus.CONFIRMED
+                    "scheduled",
+                    "confirmed"
                 ])
             )
         )
@@ -927,14 +927,14 @@ def cancel_patient_appointment(
         )
     
     # Check if appointment can be cancelled
-    if appointment.status not in [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED]:
+    if appointment.status not in ["scheduled", "confirmed"]:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel appointment with status: {appointment.status}"
         )
     
     # Cancel appointment
-    appointment.status = AppointmentStatus.CANCELLED
+    appointment.status = "cancelled"
     if reason:
         appointment.notes = f"Cancelled by patient: {reason}"
     
