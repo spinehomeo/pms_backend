@@ -15,6 +15,7 @@ from models.patients_model import Patient
 from models.appointments_model import Appointment
 from models.prescriptions_model import Prescription
 from models.login_model import Message
+from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/cases", tags=["📋 Cases"])
 
@@ -222,6 +223,11 @@ def create_case(
     case_dict = case_in.model_dump(exclude_unset=True)
     validate_case_fields(current_user.id, case_dict, session)
     
+    # Validate status if provided
+    if case_dict.get("status"):
+        if not EnumService.validate_value(session, "CaseStatus", case_dict["status"], current_user.id):
+            raise HTTPException(status_code=400, detail=f"Invalid case status: {case_dict['status']}")
+    
     # Prepare case data
     case_data = {
         **case_dict,
@@ -270,6 +276,11 @@ def update_case(
     # Validate case fields
     case_dict = case_in.model_dump(exclude_unset=True)
     validate_case_fields(current_user.id, case_dict, session)
+    
+    # Validate status if provided
+    if case_dict.get("status"):
+        if not EnumService.validate_value(session, "CaseStatus", case_dict["status"], current_user.id):
+            raise HTTPException(status_code=400, detail=f"Invalid case status: {case_dict['status']}")
     
     # Update case
     for field_name, value in case_dict.items():

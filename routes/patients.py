@@ -25,11 +25,11 @@ from api.deps import (
 from core.security import get_password_hash, verify_password
 from models.patients_model import (
     Patient, PatientCreate, PatientUpdate, PatientPublic, PatientsPublic,
-    PatientGender,
 )
 from models.appointments_model import Appointment, AppointmentPublic
 from models.cases_model import PatientCase
 from models.login_model import Message
+from utils.enum_service import EnumService
 
 # Create two routers with separate tags
 doctor_router = APIRouter(
@@ -78,7 +78,7 @@ def read_patients(
     limit: int = 100,
     search: Optional[str] = Query(None, min_length=1, max_length=100),
     payment_status: Optional[bool] = Query(None),
-    gender: Optional[PatientGender] = Query(None),
+    gender: Optional[str] = Query(None),
 ) -> Any:
     """
     Retrieve patients with optional search.
@@ -127,6 +127,12 @@ def read_patients(
     
     # NEW: Filter by gender
     if gender:
+        # Validate gender against dynamic enum
+        if not EnumService.validate_value(session, "PatientGender", gender, current_user.id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid gender '{gender}'. Use /enums/doctor/PatientGender to get valid options."
+            )
         count_statement = count_statement.where(Patient.gender == gender)
         statement = statement.where(Patient.gender == gender)
     

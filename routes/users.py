@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 import jwt
 
 from utils import crud
+from utils.enum_service import EnumService
 from api.deps import (
     CurrentUser,
     SessionDep,
@@ -1295,6 +1296,13 @@ def register_patient_simple(
     phone_suffix = patient_in.phone[-4:] if len(patient_in.phone) >= 4 else patient_in.phone
     random_suffix = uuid.uuid4().hex[:10]
     unique_cnic = f"P{phone_suffix}{random_suffix}"  # Total: 1+4+10=15 chars
+    
+    # Validate gender
+    if not EnumService.validate_value(session, "PatientGender", patient_in.gender, patient_in.doctor_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid gender '{patient_in.gender}'. Use /enums/doctor/PatientGender to get valid options."
+        )
     
     # Create patient record with the provided doctor_id
     patient = Patient(

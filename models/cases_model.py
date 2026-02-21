@@ -49,12 +49,13 @@ class PatientCase(PatientCaseBase, table=True):
     )
     case_date: date = Field(default_factory=date.today)
     case_number: str = Field(max_length=50, unique=True, index=True)
+    status: str = Field(default="open", max_length=50)  # From CaseStatus enum: open, active, closed, archived
     
     # Relationships
     patient: "Patient" = Relationship(back_populates="cases")
     doctor: "User" = Relationship(back_populates="cases")
     appointment: Optional["Appointment"] = Relationship(back_populates="case")
-    prescription: Optional["Prescription"] = Relationship(back_populates="case")
+    prescriptions: List["Prescription"] = Relationship(back_populates="case")
     follow_ups: List["FollowUp"] = Relationship(back_populates="case")
 
 
@@ -77,6 +78,7 @@ class PatientCaseCreate(SQLModel):
     
     # Dynamic custom fields
     custom_fields: Optional[Dict[str, Any]] = None
+    status: Optional[str] = Field(default="open", max_length=50)  # From CaseStatus enum
 
 
 class PatientCaseUpdate(SQLModel):
@@ -90,6 +92,7 @@ class PatientCaseUpdate(SQLModel):
     causation: Optional[str] = None
     lab_reports: Optional[str] = None
     custom_fields: Optional[Dict[str, Any]] = None
+    status: Optional[str] = Field(None, max_length=50)  # From CaseStatus enum
 
 
 # ========== RESPONSE MODELS (API Output) ==========
@@ -101,6 +104,7 @@ class PatientCasePublic(SQLModel):
     appointment_id: Optional[uuid.UUID] = None
     case_date: date
     case_number: str
+    status: str  # From CaseStatus enum
     
     # Core required fields
     chief_complaint_patient: str

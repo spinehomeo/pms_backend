@@ -8,7 +8,6 @@ from sqlmodel import Session, select
 from core.db import engine
 from core.security import get_password_hash
 from models.medicines_model import Medicine, FormEnum, ScaleEnum
-from models.patients_model import PatientGender
 from models.users_model import User, UserRole
 
 logging.basicConfig(level=logging.INFO)
@@ -244,12 +243,16 @@ def seed_enum_types(session: Session) -> None:
         ("PrescriptionType", "Prescription Type", "Types of homeopathic prescriptions"),
         ("UserRole", "User Role", "System roles"),
         ("PatientGender", "Patient Gender", "Gender options for patient profile"),
+        ("ConsultationType", "Consultation Type", "Types of consultation appointments"),
+        ("AppointmentStatus", "Appointment Status", "Lifecycle status of appointments"),
+        ("PrescriptionStatus", "Prescription Status", "Lifecycle status of prescriptions"),
+        ("FollowupStatus", "Followup Status", "Status of follow-up appointments"),
+        ("CaseStatus", "Case Status", "Status of patient cases"),
         ("ScaleEnum", "Scale", "Medicine potency scale"),
         ("FormEnum", "Medicine Form", "Physical form of medicine"),
         ("ManufacturerEnum", "Manufacturer", "Medicine manufacturers"),
         ("DayOfWeek", "Day of Week", "Days for doctor availability"),
         ("ExceptionType", "Exception Type", "Availability exception categories"),
-        ("AppointmentStatus", "Appointment Status", "Lifecycle status of appointments"),
     ]
     
     for key, label, description in ENUM_TYPE_SEEDS:
@@ -278,18 +281,19 @@ def seed_enum_options(session: Session) -> None:
     
     ENUM_OPTIONS_SEEDS = {
         "RepetitionEnum": [
-            ("Once Daily", "Once Daily"),
-            ("Twice Daily", "Twice Daily"),
-            ("Three Times Daily", "Three Times Daily"),
-            ("Four Times Daily", "Four Times Daily"),
-            ("As Needed", "As Needed"),
-            ("Weekly", "Weekly"),
+            ("OD", "Once Daily (OD)"),
+            ("BD", "Twice Daily (BD)"),
+            ("TDS", "Three Times Daily (TDS)"),
+            ("Once Weekly", "Once Weekly"),
+            ("Once in 10 Days", "Once in 10 Days"),
+            ("Fortnightly", "Fortnightly"),
+            ("Monthly", "Monthly"),
         ],
         "PrescriptionType": [
             ("Constitutional", "Constitutional"),
             ("Classical", "Classical"),
-            ("Intercurrent", "Intercurrent"),
-            ("Bio Chemic", "Bio Chemic"),
+            ("Inter Current", "Inter Current"),
+            ("Pure Bio Chemic", "Pure Bio Chemic"),
             ("Mother Tincture", "Mother Tincture"),
             ("Patent", "Patent"),
         ],
@@ -299,14 +303,49 @@ def seed_enum_options(session: Session) -> None:
             ("staff", "Staff"),
         ],
         "PatientGender": [
-            ("Male", "Male"),
-            ("Female", "Female"),
-            ("Other", "Other"),
+            ("male", "Male"),
+            ("female", "Female"),
+            ("other", "Other"),
+            ("child", "Child"),
+        ],
+        "ConsultationType": [
+            ("first", "First Consultation"),
+            ("follow-up", "Follow-up Consultation"),
+            ("emergency", "Emergency Consultation"),
+            ("review", "Review Consultation"),
+        ],
+        "AppointmentStatus": [
+            ("scheduled", "Scheduled"),
+            ("confirmed", "Confirmed"),
+            ("cancelled", "Cancelled"),
+            ("completed", "Completed"),
+            ("no-show", "No Show"),
+        ],
+        "PrescriptionStatus": [
+            ("open", "Open"),
+            ("completed", "Completed"),
+            ("cancelled", "Cancelled"),
+        ],
+        "FollowupStatus": [
+            ("scheduled", "Scheduled"),
+            ("completed", "Completed"),
+            ("pending", "Pending"),
+            ("cancelled", "Cancelled"),
+        ],
+        "CaseStatus": [
+            ("open", "Open"),
+            ("active", "Active"),
+            ("closed", "Closed"),
+            ("archived", "Archived"),
         ],
         "ScaleEnum": [
-            ("Low", "Low"),
-            ("Medium", "Medium"),
-            ("High", "High"),
+            ("X", "Decimal (X)"),
+            ("C", "Centesimal (C)"),
+            ("LM", "LM Potency"),
+            ("Q", "Quinquagintamillesimal (Q)"),
+            ("M", "Fifty Millesimal (M)"),
+            ("CM", "Hundred Millesimal (CM)"),
+            ("MM", "Thousand Millesimal (MM)"),
         ],
         "FormEnum": [
             ("Tablet", "Tablet"),
@@ -323,25 +362,18 @@ def seed_enum_options(session: Session) -> None:
             ("Local", "Local"),
         ],
         "DayOfWeek": [
-            ("Monday", "Monday"),
-            ("Tuesday", "Tuesday"),
-            ("Wednesday", "Wednesday"),
-            ("Thursday", "Thursday"),
-            ("Friday", "Friday"),
-            ("Saturday", "Saturday"),
-            ("Sunday", "Sunday"),
+            ("monday", "Monday"),
+            ("tuesday", "Tuesday"),
+            ("wednesday", "Wednesday"),
+            ("thursday", "Thursday"),
+            ("friday", "Friday"),
+            ("saturday", "Saturday"),
+            ("sunday", "Sunday"),
         ],
         "ExceptionType": [
             ("Holiday", "Holiday"),
             ("Emergency", "Emergency"),
             ("Personal Leave", "Personal Leave"),
-        ],
-        "AppointmentStatus": [
-            ("Pending", "Pending"),
-            ("Confirmed", "Confirmed"),
-            ("Cancelled", "Cancelled"),
-            ("Completed", "Completed"),
-            ("No Show", "No Show"),
         ],
     }
     

@@ -10,13 +10,15 @@ from sqlalchemy.orm import selectinload
 from api.deps import CurrentUser, SessionDep
 from models.prescriptions_model import (
     Prescription, PrescriptionCreate, PrescriptionPublic, PrescriptionsPublic,
-    PrescriptionMedicine, PrescriptionMedicineCreate, RepetitionEnum, PrescriptionType,
+    PrescriptionMedicine, PrescriptionMedicineCreate,
     PrescriptionUpdate
 )
 from models.medicines_model import Medicine
 from models.patients_model import Patient
 from models.cases_model import PatientCase
 from models.login_model import Message
+from utils.enum_service import EnumService
+from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/prescriptions", tags=["📋 Prescriptions"])
 
@@ -89,6 +91,7 @@ def read_prescriptions(
                 "id": pm.id,
                 "medicine_id": pm.medicine_id,
                 "quantity_prescribed": pm.quantity_prescribed,
+                "frequency": pm.frequency,
                 "medicine": {
                     "id": pm.medicine.id,
                     "name": pm.medicine.name,
@@ -145,6 +148,7 @@ def read_prescription(
             "id": pm.id,
             "medicine_id": pm.medicine_id,
             "quantity_prescribed": pm.quantity_prescribed,
+            "frequency": pm.frequency,
             "medicine": {
                 "id": pm.medicine.id,
                 "name": pm.medicine.name,
@@ -237,6 +241,33 @@ def create_prescription(
     if not case or case.doctor_id != current_user.id:
         raise HTTPException(status_code=404, detail="Case not found")
     
+    # Validate prescription type
+    if not EnumService.validate_value(session, "PrescriptionType", prescription_in.prescription_type, current_user.id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid prescription type '{prescription_in.prescription_type}'. Use /enums/doctor/PrescriptionType to get valid options."
+        )
+    
+    # Validate prescription status if provided
+    if prescription_in.status:
+        if not EnumService.validate_value(session, "PrescriptionStatus", prescription_in.status, current_user.id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid prescription status '{prescription_in.status}'. Use /enums/doctor/PrescriptionStatus to get valid options."
+            )
+    
+    # Validate repetition intervals in medicines
+    for medicine_in in prescription_in.medicines:
+        if medicine_in.frequency:
+            if not EnumService.validate_value(session, "RepetitionEnum", medicine_in.frequency, current_user.id):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid frequency '{medicine_in.frequency}'. Use /enums/doctor/RepetitionEnum to get valid options."
+                )
+    
+    # TODO: Validate repetition intervals if they are provided in medicines
+    # This would require extending the medicine model to include frequency/repetition
+    
     # Generate prescription number
     today = date.today()
     year_month = today.strftime("%Y-%m")
@@ -277,7 +308,8 @@ def create_prescription(
         prescription_medicine = PrescriptionMedicine(
             prescription_id=prescription.id,
             medicine_id=medicine_id,
-            quantity_prescribed=medicine_in.quantity_prescribed
+            quantity_prescribed=medicine_in.quantity_prescribed,
+            frequency=medicine_in.frequency
         )
         session.add(prescription_medicine)
 
@@ -308,6 +340,7 @@ def create_prescription(
             "id": pm.id,
             "medicine_id": pm.medicine_id,
             "quantity_prescribed": pm.quantity_prescribed,
+            "frequency": pm.frequency,
             "medicine": {
                 "id": pm.medicine.id,
                 "name": pm.medicine.name,
@@ -344,6 +377,12 @@ def update_prescription(
     
     # Update prescription details
     update_dict = prescription_in.model_dump(exclude={"medicines"}, exclude_unset=True)
+    
+    # Validate status if provided
+    if update_dict.get("status"):
+        if not EnumService.validate_value(session, "PrescriptionStatus", update_dict["status"], current_user.id):
+            raise HTTPException(status_code=400, detail=f"Invalid prescription status: {update_dict['status']}")
+    
     prescription.sqlmodel_update(update_dict)
     
     # If medicines are provided, update them
@@ -402,6 +441,7 @@ def update_prescription(
             "id": pm.id,
             "medicine_id": pm.medicine_id,
             "quantity_prescribed": pm.quantity_prescribed,
+            "frequency": pm.frequency,
             "medicine": {
                 "id": pm.medicine.id,
                 "name": pm.medicine.name,

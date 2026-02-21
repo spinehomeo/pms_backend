@@ -40,11 +40,12 @@ class FollowUp(FollowUpBase, table=True):
     follow_up_date: date = Field(default_factory=date.today)
     interval_days: int = Field(default=30, ge=7)
     next_follow_up_date: Optional[date] = Field(default=None)
+    status: str = Field(default="scheduled", max_length=50)  # From FollowupStatus enum: scheduled, completed, pending, cancelled
     
     # Relationships
     case: "PatientCase" = Relationship(back_populates="follow_ups")
-    prescription: "Prescription" = Relationship(back_populates="follow_up")
-    doctor: "User" = Relationship()
+    prescription: "Prescription" = Relationship(back_populates="follow_ups")
+    doctor: "User" = Relationship(back_populates="follow_ups")
 
 
 # ========== REQUEST MODELS (API Input) ==========
@@ -60,6 +61,7 @@ class FollowUpCreate(SQLModel):
     general_state: Optional[str] = None
     plan: Optional[str] = None
     next_follow_up_date: Optional[date] = None
+    status: Optional[str] = Field(default="scheduled", max_length=50)  # From FollowupStatus enum
 
 
 class FollowUpUpdate(SQLModel):
@@ -72,6 +74,7 @@ class FollowUpUpdate(SQLModel):
     general_state: Optional[str] = None
     plan: Optional[str] = None
     next_follow_up_date: Optional[date] = None
+    status: Optional[str] = Field(None, max_length=50)  # From FollowupStatus enum
 
 
 # ========== RESPONSE MODELS (API Output) ==========
@@ -84,6 +87,7 @@ class FollowUpPublic(FollowUpBase):
     follow_up_date: date
     interval_days: int
     next_follow_up_date: Optional[date] = None
+    status: str  # From FollowupStatus enum
     patient_name: Optional[str] = None
     case_number: Optional[str] = None
 

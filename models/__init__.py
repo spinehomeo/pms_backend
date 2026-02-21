@@ -5,7 +5,7 @@
 from .users_model import UserBase
 from .patients_model import PatientBase
 from .cases_model import PatientCaseBase
-from .prescriptions_model import PrescriptionBase, PrescriptionType, RepetitionEnum
+from .prescriptions_model import PrescriptionBase
 from .medicines_model import FormEnum, ScaleEnum, ManufacturerEnum
 from .appointments_model import AppointmentBase
 from .followups_model import FollowUpBase
@@ -38,7 +38,7 @@ from .web_content_model import (
 __all__ = [
     # Base models
     "UserBase", "PatientBase", "PatientCaseBase", 
-    "PrescriptionBase", "PrescriptionType", "RepetitionEnum",
+    "PrescriptionBase",
     "FormEnum", "ScaleEnum", "ManufacturerEnum",
     "AppointmentBase", "FollowUpBase",
     "DoctorAvailabilityBase",

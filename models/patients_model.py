@@ -3,21 +3,13 @@ import uuid
 from datetime import date
 from typing import Optional, List
 from sqlmodel import Field, Relationship, SQLModel
-from enum import Enum
-
-
-class PatientGender(str, Enum):
-    MALE = "male"
-    FEMALE = "female"
-    OTHER = "other"
-    CHILD = "child"
 
 
 # ========== DATABASE MODELS (CRUD) ==========
 class PatientBase(SQLModel):
     """Base patient model - used for both DB and API"""
     full_name: str = Field(max_length=255, nullable=False)
-    gender: PatientGender
+    gender: str = Field(max_length=20)
     phone: str = Field(max_length=20, nullable=False)
     cnic: str = Field(max_length=15, nullable=False, unique=True)  # National ID card number
     date_of_birth: Optional[date] = Field(default=None)
@@ -97,7 +89,7 @@ class PatientUpdate(SQLModel):
     email: Optional[str] = None
     cnic: Optional[str] = None
     date_of_birth: Optional[date] = None
-    gender: Optional[PatientGender] = None
+    gender: Optional[str] = Field(None, max_length=20)
     
     # Address Updates
     residential_address: Optional[str] = None

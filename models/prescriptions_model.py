@@ -3,32 +3,12 @@ import uuid
 from datetime import date
 from typing import Optional, List
 from sqlmodel import Field, Relationship, SQLModel
-from enum import Enum
-
-
-class RepetitionEnum(str, Enum):
-    OD = "OD"
-    BD = "BD"
-    TDS = "TDS"
-    ONCE_WEEKLY = "Once Weekly"
-    ONCE_10_DAYS = "Once in 10 Days"
-    FORTNIGHTLY = "Fortnightly"
-    MONTHLY = "Monthly"
-
-
-class PrescriptionType(str, Enum):
-    CONSTITUTIONAL = "Constitutional"
-    CLASSICAL = "Classical"
-    INTER_CURRENT = "Inter Current"
-    PURE_BIOCHEMIC = "Pure Bio Chemic"
-    MOTHER_TINCTURE = "Mother Tincture"
-    PATENT = "Patent"
 
 
 # ========== DATABASE MODELS (CRUD) ==========
 class PrescriptionBase(SQLModel):
     """Base prescription model"""
-    prescription_type: PrescriptionType = Field(default=PrescriptionType.CONSTITUTIONAL)
+    prescription_type: str = Field(max_length=100)
     dosage: str = Field(max_length=200)
     prescription_duration: str = Field(max_length=100)
     instructions: Optional[str] = Field(default=None)
@@ -55,12 +35,13 @@ class Prescription(PrescriptionBase, table=True):
     )
     prescription_date: date = Field(default_factory=date.today)
     prescription_number: str = Field(max_length=50, unique=True, index=True)
+    status: str = Field(default="open", max_length=50)  # From PrescriptionStatus enum: open, completed, cancelled
     
     # Relationships
-    case: "PatientCase" = Relationship(back_populates="prescription")
+    case: "PatientCase" = Relationship(back_populates="prescriptions")
     doctor: "User" = Relationship(back_populates="prescriptions")
     medicines: List["PrescriptionMedicine"] = Relationship(back_populates="prescription")
-    follow_up: Optional["FollowUp"] = Relationship(back_populates="prescription")
+    follow_ups: List["FollowUp"] = Relationship(back_populates="prescription")
 
 
 class PrescriptionMedicine(SQLModel, table=True):
@@ -79,6 +60,7 @@ class PrescriptionMedicine(SQLModel, table=True):
         index=True
     )
     quantity_prescribed: Optional[str] = Field(default=None, max_length=100)
+    frequency: Optional[str] = Field(default=None, max_length=50)  # From RepetitionInterval enum: OD, BD, TDS, etc
     
     # Relationships
     prescription: Prescription = Relationship(back_populates="medicines")
@@ -110,8 +92,9 @@ class PrescriptionMedicineCreate(SQLModel):
     # Mode 2: Quick-add new medicine
     new_medicine: Optional[QuickAddMedicineData] = None
     
-    # Common field
+    # Common fields
     quantity_prescribed: Optional[str] = Field(default=None, max_length=100)
+    frequency: Optional[str] = Field(default=None, max_length=50)  # From RepetitionInterval enum
     
     def model_post_init(self, __context):
         """Validate that exactly one of medicine_id or new_medicine is provided"""
@@ -125,6 +108,7 @@ class PrescriptionCreate(PrescriptionBase):
     """API INPUT MODEL for creating prescriptions"""
     case_id: uuid.UUID
     medicines: List[PrescriptionMedicineCreate] = []
+    status: Optional[str] = Field(default="open", max_length=50)  # From PrescriptionStatus enum
 
 
 class PrescriptionUpdate(SQLModel):
@@ -136,6 +120,7 @@ class PrescriptionUpdate(SQLModel):
     dietary_restrictions: Optional[str] = None
     avoidance: Optional[str] = None
     notes: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=50)  # From PrescriptionStatus enum
     medicines: Optional[List[PrescriptionMedicineCreate]] = None
 
 
@@ -153,6 +138,7 @@ class PrescriptionMedicinePublic(SQLModel):
     id: uuid.UUID
     medicine_id: uuid.UUID
     quantity_prescribed: Optional[str] = None
+    frequency: Optional[str] = None  # From RepetitionInterval enum
     medicine: MedicineBasicInfo
 
 
@@ -163,6 +149,7 @@ class PrescriptionPublic(PrescriptionBase):
     doctor_id: uuid.UUID
     prescription_date: date
     prescription_number: str
+    status: str  # From PrescriptionStatus enum
     medicines: List[PrescriptionMedicinePublic] = []
     patient_name: Optional[str] = None
     case_number: Optional[str] = None

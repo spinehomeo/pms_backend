@@ -14,6 +14,7 @@ from models.patients_model import Patient
 from models.prescriptions_model import Prescription
 from models.cases_model import PatientCase
 from models.login_model import Message
+from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/followups", tags=["🔔 Follow-ups"])
 
@@ -195,6 +196,11 @@ def create_followup(
         "next_follow_up_date": next_follow_up
     })
     
+    # Validate status if provided
+    if followup_data.get("status"):
+        if not EnumService.validate_value(session, "FollowupStatus", followup_data["status"], current_user.id):
+            raise HTTPException(status_code=400, detail=f"Invalid follow-up status: {followup_data['status']}")
+    
     followup = FollowUp.model_validate(followup_data)
     session.add(followup)
     session.commit()
@@ -248,6 +254,12 @@ def update_followup(
             raise HTTPException(status_code=404, detail="Prescription not found")
     
     update_dict = followup_in.model_dump(exclude_unset=True)
+    
+    # Validate status if provided
+    if update_dict.get("status"):
+        if not EnumService.validate_value(session, "FollowupStatus", update_dict["status"], current_user.id):
+            raise HTTPException(status_code=400, detail=f"Invalid follow-up status: {update_dict['status']}")
+    
     followup.sqlmodel_update(update_dict)
     session.add(followup)
     session.commit()

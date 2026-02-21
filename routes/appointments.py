@@ -17,6 +17,7 @@ from models.doctor_availability_model import DoctorAvailability, DayOfWeek
 from models.patients_model import Patient
 from models.login_model import Message
 from utils.availability_service import is_doctor_available
+from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/appointments", tags=["📅 Appointments"])
 
@@ -155,6 +156,12 @@ def read_appointments(
             )
     
     if status:
+        # Validate status against dynamic enum
+        if not EnumService.validate_value(session, "AppointmentStatus", status, current_user.id):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid status '{status}'. Use /enums/doctor/AppointmentStatus to get valid options."
+            )
         count_statement = count_statement.where(Appointment.status == status)
         statement = statement.where(Appointment.status == status)
     
@@ -233,6 +240,19 @@ def read_upcoming_appointments(
     today = date.today()
     future_date = today.replace(day=today.day + days)
     
+    # Get active appointment statuses for this doctor
+    active_statuses = EnumService.get_doctor_options(session, "AppointmentStatus", current_user.id)
+    status_values = [opt.value for opt in active_statuses if opt.value in ["scheduled", "confirmed"]]
+    
+    if not status_values:
+        # If no statuses match, return empty result
+        return {
+            "appointments": [],
+            "grouped_by_date": {},
+            "from_date": today.isoformat(),
+            "to_date": future_date.isoformat()
+        }
+    
     statement = (
         select(Appointment)
         .where(
@@ -240,10 +260,7 @@ def read_upcoming_appointments(
                 Appointment.doctor_id == current_user.id,
                 Appointment.appointment_date >= today,
                 Appointment.appointment_date <= future_date,
-                Appointment.status.in_([
-                    "scheduled",
-                    "confirmed"
-                ])
+                Appointment.status.in_(status_values)
             )
         )
         .order_by(Appointment.appointment_date.asc(), Appointment.appointment_time.asc())
@@ -321,6 +338,22 @@ def create_appointment(
     if not patient or patient.doctor_id != current_user.id:
         raise HTTPException(status_code=404, detail="Patient not found")
     
+    # Validate appointment status if provided
+    if hasattr(appointment_in, 'status') and appointment_in.status:
+        if not EnumService.validate_value(session, "AppointmentStatus", appointment_in.status, current_user.id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status '{appointment_in.status}'. Use /enums/doctor/AppointmentStatus to get valid options."
+            )
+    
+    # Validate consultation type if provided
+    if hasattr(appointment_in, 'consultation_type') and appointment_in.consultation_type:
+        if not EnumService.validate_value(session, "ConsultationType", appointment_in.consultation_type, current_user.id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid consultation type '{appointment_in.consultation_type}'. Use /enums/doctor/ConsultationType to get valid options."
+            )
+    
     # Validate appointment time is within doctor's availability
     _validate_availability(
         session,
@@ -342,15 +375,16 @@ def create_appointment(
         timedelta(minutes=appointment_in.duration_minutes)
     ).time()
     
+    # Get available status values for conflict check
+    active_statuses = EnumService.get_doctor_options(session, "AppointmentStatus", current_user.id)
+    conflict_check_statuses = [opt.value for opt in active_statuses if opt.value in ["scheduled", "confirmed"]]
+    
     conflicting_appointments = session.exec(
         select(Appointment).where(
             and_(
                 Appointment.doctor_id == current_user.id,
                 Appointment.appointment_date == appointment_in.appointment_date,
-                Appointment.status.in_([
-                    "scheduled",
-                    "confirmed"
-                ]),
+                Appointment.status.in_(conflict_check_statuses) if conflict_check_statuses else Appointment.status.in_(["scheduled", "confirmed"]),
                 or_(
                     # New appointment starts during existing appointment
                     and_(
@@ -427,6 +461,22 @@ def update_appointment(
     if appointment.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to update this appointment")
     
+    # Validate status if being updated
+    if appointment_in.status:
+        if not EnumService.validate_value(session, "AppointmentStatus", appointment_in.status, current_user.id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status '{appointment_in.status}'. Use /enums/doctor/AppointmentStatus to get valid options."
+            )
+    
+    # Validate consultation type if being updated
+    if appointment_in.consultation_type:
+        if not EnumService.validate_value(session, "ConsultationType", appointment_in.consultation_type, current_user.id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid consultation type '{appointment_in.consultation_type}'. Use /enums/doctor/ConsultationType to get valid options."
+            )
+    
     # Check for scheduling conflicts if time or date is being changed
     if (appointment_in.appointment_date or appointment_in.appointment_time or 
         appointment_in.duration_minutes):
@@ -446,16 +496,17 @@ def update_appointment(
             timedelta(minutes=check_duration)
         ).time()
         
+        # Get available status values for conflict check
+        active_statuses = EnumService.get_doctor_options(session, "AppointmentStatus", current_user.id)
+        conflict_check_statuses = [opt.value for opt in active_statuses if opt.value in ["scheduled", "confirmed"]]
+        
         conflicting_appointments = session.exec(
             select(Appointment).where(
                 and_(
                     Appointment.doctor_id == current_user.id,
                     Appointment.appointment_date == check_date,
                     Appointment.id != appointment_id,
-                    Appointment.status.in_([
-                        "scheduled",
-                        "confirmed"
-                    ]),
+                    Appointment.status.in_(conflict_check_statuses) if conflict_check_statuses else Appointment.status.in_(["scheduled", "confirmed"]),
                     or_(
                         and_(
                             check_time >= Appointment.appointment_time,

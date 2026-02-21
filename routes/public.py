@@ -249,8 +249,16 @@ def book_appointment_public(
     if not patient:
         # Create patient record directly (no User table entry)
         from core.security import get_password_hash
-        from models.patients_model import PatientGender
+        from utils.enum_service import EnumService
         import time
+        
+        # Use valid gender or default to "other"
+        gender = booking_data.gender if booking_data.gender else "other"
+        
+        # Validate gender
+        if not EnumService.validate_value(session, "PatientGender", gender, doctor_uuid):
+            # If validation fails, use default "other"
+            gender = "other"
         
         # Generate unique CNIC (max 15 chars per database constraint)
         phone_suffix = booking_data.phone[-4:] if len(booking_data.phone) >= 4 else booking_data.phone
@@ -262,7 +270,7 @@ def book_appointment_public(
             full_name=booking_data.full_name,
             phone=booking_data.phone,
             cnic=unique_cnic,
-            gender=PatientGender(booking_data.gender) if booking_data.gender else PatientGender.OTHER,
+            gender=gender,
             hashed_password=get_password_hash(booking_data.phone),
         )
         session.add(patient)
