@@ -112,6 +112,7 @@ class UserUpdate(SQLModel):
 class UserUpdateMe(SQLModel):
     """API INPUT MODEL for updating own profile"""
     full_name: Optional[str] = Field(default=None, max_length=255)
+    email: Optional[str] = Field(default=None, min_length=5, max_length=255)
     phone: Optional[str] = Field(default=None, max_length=20)
     specialization: Optional[str] = Field(default=None, max_length=255)
     clinic_name: Optional[str] = Field(default=None, max_length=255)

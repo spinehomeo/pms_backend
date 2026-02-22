@@ -94,12 +94,14 @@ def advanced_search_medicines(
     to_date: Optional[datetime] = Query(None),
 ) -> Any:
     """
-    Advanced search - filter by any field combination
+    Advanced search - filter by any field combination.
+    Favorites from the current doctor are returned at the top of the list.
     """
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can access medicines")
     
-    statement = select(Medicine).offset(skip).limit(limit)
+    # Build main query without pagination (will paginate after ordering)
+    statement = select(Medicine)
     count_statement = select(func.count()).select_from(Medicine)
     
     # Apply filters
@@ -155,7 +157,9 @@ def advanced_search_medicines(
         count_statement = count_statement.where(Medicine.created_at <= to_date)
     
     # Handle favorites filter
+    has_favorite_filter = False
     if is_favorite is not None:
+        has_favorite_filter = True
         if is_favorite:
             statement = (
                 statement
@@ -185,7 +189,24 @@ def advanced_search_medicines(
             statement = statement.where(Medicine.id.notin_(subquery))
             count_statement = count_statement.where(Medicine.id.notin_(subquery))
     
-    statement = statement.order_by(Medicine.name)
+    # Join with doctor preferences to sort favorites on top (if not already joined)
+    if not has_favorite_filter or not is_favorite:
+        statement = statement.outerjoin(
+            DoctorMedicinePreference, 
+            (DoctorMedicinePreference.medicine_id == Medicine.id) &
+            (DoctorMedicinePreference.doctor_id == current_user.id)
+        )
+    
+    # Sort: favorites first (coalesce handles NULL values), then by name
+    statement = (
+        statement
+        .order_by(
+            func.coalesce(DoctorMedicinePreference.is_favorite, False).desc(),
+            Medicine.name
+        )
+        .offset(skip)
+        .limit(limit)
+    )
     
     count = session.exec(count_statement).one()
     medicines = session.exec(statement).all()

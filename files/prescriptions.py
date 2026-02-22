@@ -421,13 +421,12 @@ def create_prescription(
     )
     prescription = session.exec(statement).one()
     
-    # Build response with patient_name, case_number, and medicines
+    # Build PrescriptionPublic
     rx_data = prescription.model_dump(exclude={"medicines"})
     if prescription.case:
         rx_data['patient_name'] = prescription.case.patient.full_name if prescription.case.patient else None
         rx_data['case_number'] = prescription.case.case_number
     
-    # Convert medicines to response format
     medicines_list = []
     for pm in prescription.medicines:
         medicine_dict = {
