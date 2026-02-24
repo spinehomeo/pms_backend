@@ -3,37 +3,6 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 from sqlmodel import Field, Relationship, SQLModel
-from enum import Enum
-
-
-class ScaleEnum(str, Enum):
-    C = "C"
-    X = "X"
-    Q = "Q"
-
-
-class FormEnum(str, Enum):
-    DISKETTE = "Diskette"
-    SOM = "SOM"
-    BLANKETS = "Blankets"
-    BIO_CHEMIC = "Bio Chemic"
-    HOMOEO_TABS = "Homoeo Tabs"
-    GLOBULES = "Globules"
-    DILUTIONS = "Dilutions"
-
-
-class ManufacturerEnum(str, Enum):
-    SCHWABE = "Schwabe"
-    RECKWEG = "Reckweg"
-    LEMASAR = "Lemasar"
-    DOLISOS = "Dolisos"
-    KAMAL = "Kamal"
-    MASOOD = "Masood"
-    BM = "BM"
-    KENT = "Kent"
-    BROOKS = "Brooks"
-    WARIS_SHAH = "Waris Shah"
-    SELF_PACKING = "Self Packing"
 
 
 # ========== DATABASE MODELS (CRUD) ==========
@@ -42,9 +11,9 @@ class MedicineBase(SQLModel):
     name: str = Field(index=True, nullable=False, max_length=255)
     description: Optional[str] = Field(default=None)
     potency: str = Field(max_length=50)
-    potency_scale: ScaleEnum = Field(default=ScaleEnum.C)
-    form: FormEnum = Field(default=FormEnum.GLOBULES)
-    manufacturer: Optional[ManufacturerEnum] = Field(default=None)
+    potency_scale: str = Field(default="C", max_length=10)  # Dynamic: C, X, Q - validated via EnumService
+    form: str = Field(default="Globules", max_length=100)  # Dynamic: Globules, Dilutions, etc - validated via EnumService
+    manufacturer: Optional[str] = Field(default=None, max_length=100)  # Dynamic: validated via EnumService
 
 
 class Medicine(MedicineBase, table=True):
@@ -103,9 +72,9 @@ class MedicineUpdate(SQLModel):
     name: Optional[str] = None
     description: Optional[str] = None
     potency: Optional[str] = None
-    potency_scale: Optional[ScaleEnum] = None
-    form: Optional[FormEnum] = None
-    manufacturer: Optional[ManufacturerEnum] = None
+    potency_scale: Optional[str] = None
+    form: Optional[str] = None
+    manufacturer: Optional[str] = None
     is_verified: Optional[bool] = None  # Only admins can update this
 
 
@@ -113,9 +82,9 @@ class QuickAddMedicineRequest(SQLModel):
     """Quick add medicine during prescription creation"""
     name: str
     potency: str
-    potency_scale: ScaleEnum = ScaleEnum.C
-    form: FormEnum = FormEnum.GLOBULES
-    manufacturer: Optional[ManufacturerEnum] = None
+    potency_scale: str = "C"
+    form: str = "Globules"
+    manufacturer: Optional[str] = None
     description: Optional[str] = None
 
 

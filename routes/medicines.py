@@ -14,8 +14,58 @@ from models.medicines_model import (
 from models.login_model import Message
 from models.prescriptions_model import PrescriptionMedicine
 from models.users_model import User
+from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/medicines", tags=["💊 Medicines"])
+
+
+# ============================================================================
+# VALIDATION HELPERS
+# ============================================================================
+
+def validate_medicine_enums(session, medicine_data: dict):
+    """
+    Validate medicine enum fields against dynamic enum system.
+    Values are validated against existing database enums (case-insensitive).
+    Enums: FormEnum, ManufacturerEnum, ScaleEnum (already fully seeded)
+    
+    Raises HTTPException if any enum value is invalid.
+    """
+    # Normalize input to lowercase for consistent comparison
+    if medicine_data.get("potency_scale"):
+        scale_value = str(medicine_data["potency_scale"]).lower()
+        if not EnumService.validate_value(session, "ScaleEnum", scale_value):
+            valid_scales = [opt.value for opt in EnumService.get_global_options(session, "ScaleEnum")]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid potency_scale '{medicine_data['potency_scale']}'. Valid values: {', '.join(valid_scales)}"
+            )
+        # Update to normalized value
+        medicine_data["potency_scale"] = scale_value
+    
+    # Validate form (case-insensitive)
+    if medicine_data.get("form"):
+        form_value = str(medicine_data["form"]).lower()
+        if not EnumService.validate_value(session, "FormEnum", form_value):
+            valid_forms = [opt.value for opt in EnumService.get_global_options(session, "FormEnum")]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid form '{medicine_data['form']}'. Valid values: {', '.join(valid_forms)}"
+            )
+        # Update to normalized value
+        medicine_data["form"] = form_value
+    
+    # Validate manufacturer (case-insensitive)
+    if medicine_data.get("manufacturer"):
+        mfg_value = str(medicine_data["manufacturer"]).lower()
+        if not EnumService.validate_value(session, "ManufacturerEnum", mfg_value):
+            valid_manufacturers = [opt.value for opt in EnumService.get_global_options(session, "ManufacturerEnum")]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid manufacturer '{medicine_data['manufacturer']}'. Valid values: {', '.join(valid_manufacturers)}"
+            )
+        # Update to normalized value
+        medicine_data["manufacturer"] = mfg_value
 
 
 @router.get("/all", response_model=MedicinesPublic)
@@ -260,6 +310,10 @@ def create_medicine(
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can add medicines")
     
+    # Validate enum fields against dynamic enum system
+    medicine_data = medicine_in.model_dump()
+    validate_medicine_enums(session, medicine_data)
+    
     # Check if medicine already exists (same name + potency + form)
     existing = session.exec(
         select(Medicine)
@@ -348,8 +402,11 @@ def update_medicine(
             detail="Only the creator or admin can update this medicine"
         )
     
-    # Update fields
+    # Validate enum fields against dynamic enum system
     update_dict = medicine_in.model_dump(exclude_unset=True)
+    validate_medicine_enums(session, update_dict)
+    
+    # Update fields
     medicine.sqlmodel_update(update_dict)
     
     session.add(medicine)

@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from core.db import engine
 from core.security import get_password_hash
-from models.medicines_model import Medicine, FormEnum, ScaleEnum
+from models.medicines_model import Medicine
 from models.users_model import User, UserRole
 
 logging.basicConfig(level=logging.INFO)
@@ -165,8 +165,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Arnica Montana"),
             "potency": "200",
-            "potency_scale": ScaleEnum.C,
-            "form": FormEnum.GLOBULES,
+            "potency_scale": "C",
+            "form": "Globules",
             "quantity": 100.0,
             "unit": "bottle",
             "batch_number": "ARN200-001",
@@ -178,8 +178,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Belladonna"),
             "potency": "30",
-            "potency_scale": ScaleEnum.C,
-            "form": FormEnum.GLOBULES,
+            "potency_scale": "C",
+            "form": "Globules",
             "quantity": 150.0,
             "unit": "bottle",
             "batch_number": "BELL30-001",
@@ -191,8 +191,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Nux Vomica"),
             "potency": "30",
-            "potency_scale": ScaleEnum.C,
-            "form": FormEnum.GLOBULES,
+            "potency_scale": "C",
+            "form": "Globules",
             "quantity": 120.0,
             "unit": "bottle",
             "batch_number": "NUX30-001",
@@ -204,8 +204,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Pulsatilla"),
             "potency": "200",
-            "potency_scale": ScaleEnum.C,
-            "form": FormEnum.GLOBULES,
+            "potency_scale": "C",
+            "form": "Globules",
             "quantity": 80.0,
             "unit": "bottle",
             "batch_number": "PULS200-001",
@@ -217,8 +217,8 @@ def create_initial_stock(session: Session, doctor_id: str) -> None:
         {
             "medicine_id": medicine_map.get("Sulphur"),
             "potency": "200",
-            "potency_scale": ScaleEnum.C,
-            "form": FormEnum.GLOBULES,
+            "potency_scale": "C",
+            "form": "Globules",
             "quantity": 90.0,
             "unit": "bottle",
             "batch_number": "SULPH200-001",
