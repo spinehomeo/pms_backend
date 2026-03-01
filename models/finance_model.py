@@ -17,6 +17,7 @@ from typing import Optional, List
 
 import sqlalchemy as sa
 from sqlmodel import SQLModel, Field, Relationship
+from pydantic import field_serializer
 
 
 # ============================================================================
@@ -249,6 +250,13 @@ class FinanceTransactionPublic(SQLModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
+    @field_serializer('amount', 'running_balance')
+    def serialize_decimal(self, value: Decimal, _info) -> Decimal:
+        """Serialize Decimal fields to 2 decimal places"""
+        if value is None:
+            return None
+        return Decimal(str(round(float(value), 2)))
+
 
 class CashBooksPublic(SQLModel):
     """Response for list of cash books"""
@@ -306,6 +314,13 @@ class FinanceTransactionCreate(SQLModel):
     remarks: Optional[str] = Field(default=None, max_length=500)
     custom_field_values: Optional[dict] = None
 
+    @field_serializer('amount')
+    def serialize_amount(self, value: Decimal, _info) -> Decimal:
+        """Serialize amount to 2 decimal places"""
+        if value is None:
+            return None
+        return Decimal(str(round(float(value), 2)))
+
 
 class FinanceTransactionUpdate(SQLModel):
     """Schema for updating transaction"""
@@ -313,6 +328,15 @@ class FinanceTransactionUpdate(SQLModel):
     transaction_date: Optional[date] = None
     nature_code: Optional[str] = Field(default=None, max_length=50)
     category_code: Optional[str] = Field(default=None, max_length=100)
+
+    @field_serializer('amount')
+    def serialize_amount(self, value: Decimal, _info) -> Decimal:
+        """Serialize amount to 2 decimal places"""
+        if value is None:
+            return None
+        return Decimal(str(round(float(value), 2)))
+
+
 class CashBookSummaryPublic(SQLModel):
     """Cash book financial summary response"""
     cash_book_id: uuid.UUID
@@ -323,6 +347,13 @@ class CashBookSummaryPublic(SQLModel):
     current_balance: Decimal
     transaction_count: int
 
+    @field_serializer('total_cash_in', 'total_cash_out', 'net_balance', 'current_balance')
+    def serialize_decimal(self, value: Decimal, _info) -> Decimal:
+        """Serialize Decimal fields to 2 decimal places"""
+        if value is None:
+            return None
+        return Decimal(str(round(float(value), 2)))
+
 
 class DoctorFinanceSummaryPublic(SQLModel):
     """Doctor aggregate financial summary response"""
@@ -332,3 +363,10 @@ class DoctorFinanceSummaryPublic(SQLModel):
     total_current_balance: Decimal
     transaction_count: int
     books: List[CashBookSummaryPublic]
+
+    @field_serializer('total_cash_in', 'total_cash_out', 'net_balance', 'total_current_balance')
+    def serialize_decimal(self, value: Decimal, _info) -> Decimal:
+        """Serialize Decimal fields to 2 decimal places"""
+        if value is None:
+            return None
+        return Decimal(str(round(float(value), 2)))

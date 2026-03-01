@@ -95,7 +95,8 @@ def _recalculate_running_balances(session: Session, cash_book_id: uuid.UUID) -> 
         elif txn.nature_code == "CASH_OUT":
             running -= txn.amount
 
-        txn.running_balance = running
+        # Round to 2 decimal places
+        txn.running_balance = Decimal(str(round(float(running), 2)))
         txn.updated_at = datetime.utcnow()
         session.add(txn)
         count += 1
@@ -605,6 +606,9 @@ def create_transaction(
     else:
         raise HTTPException(status_code=400, detail="Nature must be CASH_IN or CASH_OUT")
 
+    # Round to 2 decimal places
+    new_balance = Decimal(str(round(float(new_balance), 2)))
+
     from datetime import datetime
     transaction = FinanceTransaction(
         cash_book_id=payload.cash_book_id,
@@ -990,13 +994,19 @@ def get_cash_book_summary(
         elif txn.nature_code == "CASH_OUT":
             total_out += txn.amount
 
+    # Round all totals to 2 decimal places
+    total_in = Decimal(str(round(float(total_in), 2)))
+    total_out = Decimal(str(round(float(total_out), 2)))
+    net_balance = Decimal(str(round(float(total_in - total_out), 2)))
+    current_balance = Decimal(str(round(float(_get_last_balance(session, cash_book_id)), 2)))
+
     return CashBookSummaryPublic(
         cash_book_id=cash_book_id,
         name=cash_book.name,
         total_cash_in=total_in,
         total_cash_out=total_out,
-        net_balance=total_in - total_out,
-        current_balance=_get_last_balance(session, cash_book_id),
+        net_balance=net_balance,
+        current_balance=current_balance,
         transaction_count=len(transactions),
     )
 
@@ -1058,6 +1068,12 @@ def get_doctor_summary(
 
         current_bal = _get_last_balance(session, book.id)
 
+        # Round to 2 decimal places for book-level totals
+        total_in = Decimal(str(round(float(total_in), 2)))
+        total_out = Decimal(str(round(float(total_out), 2)))
+        net_balance = Decimal(str(round(float(total_in - total_out), 2)))
+        current_bal = Decimal(str(round(float(current_bal), 2)))
+
         grand_in += total_in
         grand_out += total_out
         grand_bal += current_bal
@@ -1068,15 +1084,21 @@ def get_doctor_summary(
             name=book.name,
             total_cash_in=total_in,
             total_cash_out=total_out,
-            net_balance=total_in - total_out,
+            net_balance=net_balance,
             current_balance=current_bal,
             transaction_count=len(transactions),
         ))
 
+    # Round grand totals to 2 decimal places
+    grand_in = Decimal(str(round(float(grand_in), 2)))
+    grand_out = Decimal(str(round(float(grand_out), 2)))
+    grand_net = Decimal(str(round(float(grand_in - grand_out), 2)))
+    grand_bal = Decimal(str(round(float(grand_bal), 2)))
+
     return DoctorFinanceSummaryPublic(
         total_cash_in=grand_in,
         total_cash_out=grand_out,
-        net_balance=grand_in - grand_out,
+        net_balance=grand_net,
         total_current_balance=grand_bal,
         transaction_count=grand_count,
         books=book_summaries,
