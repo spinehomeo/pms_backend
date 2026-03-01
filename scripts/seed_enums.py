@@ -2,6 +2,13 @@
 """
 Standalone script to seed all enum types and options into the database.
 
+Includes: RepetitionEnum, PrescriptionType, UserRole, PatientGender, ConsultationType,
+          AppointmentStatus, PrescriptionStatus, FollowupStatus, CaseStatus, 
+          ScaleEnum, FormEnum, ManufacturerEnum, DayOfWeek, ExceptionType
+          
+Finance enums (TransactionNature, TransactionCategory) are seeded separately in:
+  scripts/seed_finance_enums.py
+
 Usage:
     python scripts/seed_enums.py
     
@@ -229,12 +236,13 @@ def main() -> None:
             seed_enum_options(session)
         
         logger.info("=" * 70)
-        logger.info("✓ ALL ENUMS SEEDED SUCCESSFULLY")
+        logger.info("✓ ALL CORE ENUMS SEEDED SUCCESSFULLY")
         logger.info("=" * 70)
-        logger.info("\nYou can now use the enum endpoints:")
-        logger.info("  GET  /enums/doctor/all")
-        logger.info("  GET  /enums/doctor/{enum_type_key}")
-        logger.info("  POST /enums/doctor/{enum_type_key}")
+        logger.info("\nNext steps:")
+        logger.info("  1. Seed finance enums: python scripts/seed_finance_enums.py")
+        logger.info("  2. Use enum endpoints:")
+        logger.info("     GET  /enums/doctor/all")
+        logger.info("     GET  /enums/doctor/{enum_type_key}")
         
     except Exception as e:
         logger.error(f"\n✗ Error seeding enums: {e}", exc_info=True)

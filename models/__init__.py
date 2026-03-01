@@ -11,6 +11,10 @@ from .followups_model import FollowUpBase
 from .doctor_availability_model import DoctorAvailabilityBase
 from .doctor_availability_exception_model import DoctorAvailabilityExceptionBase
 from .enum_option_model import EnumTypeBase, EnumOptionBase, DoctorEnumPreferenceBase
+from .finance_model import (
+    CashBookBase, CashBookCustomFieldBase,
+    FinanceTransactionBase, TransactionCustomFieldValueBase
+)
 
 # Then import the table .(in dependency order)
 from .users_model import User
@@ -24,6 +28,10 @@ from .doctor_availability_model import DoctorAvailability
 from .doctor_availability_exception_model import DoctorAvailabilityException
 from .doctor_preferences_model import DoctorCaseFieldPreference, DoctorCaseTemplate
 from .enum_option_model import EnumType, EnumOption, DoctorEnumPreference
+from .finance_model import (
+    CashBook, CashBookCustomField,
+    FinanceTransaction, TransactionCustomFieldValue
+)
 
 # Web content models
 from .web_content_model import (
@@ -42,6 +50,8 @@ __all__ = [
     "DoctorAvailabilityBase",
     "DoctorAvailabilityExceptionBase",
     "EnumTypeBase", "EnumOptionBase", "DoctorEnumPreferenceBase",
+    "CashBookBase", "CashBookCustomFieldBase",
+    "FinanceTransactionBase", "TransactionCustomFieldValueBase",
     
     # Table models
     "User", "Patient", "PatientCase", "Medicine", 
@@ -49,6 +59,8 @@ __all__ = [
     "Appointment", "FollowUp", "DoctorAvailability", "DoctorAvailabilityException",
     "DoctorCaseFieldPreference", "DoctorCaseTemplate",
     "EnumType", "EnumOption", "DoctorEnumPreference",
+    "CashBook", "CashBookCustomField",
+    "FinanceTransaction", "TransactionCustomFieldValue",
     
     # Web content models
     "AboutDoctor", "Qualification", "Specialization",

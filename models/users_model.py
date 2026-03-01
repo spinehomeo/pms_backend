@@ -49,6 +49,10 @@ class User(UserBase, table=True):
     availability_slots: List["DoctorAvailability"] = Relationship(back_populates="doctor")
     availability_exceptions: List["DoctorAvailabilityException"] = Relationship(back_populates="doctor")
     
+    # Finance relationships
+    cash_books: List["CashBook"] = Relationship(back_populates="doctor")
+    # Note: finance_transactions is read-only (viewonly) in FinanceTransaction due to multiple FK paths
+    
     @property
     def is_doctor(self) -> bool:
         """Check if user is a doctor"""
