@@ -515,7 +515,7 @@ def get_financial_summary(
     
     # Calculate consultation revenue
     # Assuming each consultation has a fee (you need to add this field)
-    consultation_revenue = len(appointments) * 500  # Example: ₹500 per consultation
+    consultation_revenue = len(appointments) * 500  # Example: Rs500 per consultation
     
     # Calculate medicine costs
     # This would require cost tracking in your stock system

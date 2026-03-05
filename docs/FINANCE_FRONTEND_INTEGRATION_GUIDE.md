@@ -531,9 +531,9 @@ const { data: summary } = useQuery({
 
 return (
   <div className="summary-grid">
-    <Card title="Income" value={`₹${summary?.total_cash_in}`} icon="arrow-up" />
-    <Card title="Expenses" value={`₹${summary?.total_cash_out}`} icon="arrow-down" />
-    <Card title="Net Balance" value={`₹${summary?.net_balance}`} icon="scale" />
+    <Card title="Income" value={`Rs${summary?.total_cash_in}`} icon="arrow-up" />
+    <Card title="Expenses" value={`Rs${summary?.total_cash_out}`} icon="arrow-down" />
+    <Card title="Net Balance" value={`Rs${summary?.net_balance}`} icon="scale" />
     <Card title="Transactions" value={summary?.transaction_count} icon="receipt" />
   </div>
 )
@@ -598,7 +598,7 @@ Get consolidated summary across ALL cash books for the doctor.
 │                                                              │
 │  ┌──────────────┬──────────────┬──────────────┬──────────────┐
 │  │ Income       │ Expenses     │ Net Balance  │ Transactions │
-│  │ ₹50,000      │ ₹35,000      │ ₹15,000      │ 42           │
+│  │ Rs50,000      │ Rs35,000      │ Rs15,000      │ 42           │
 │  └──────────────┴──────────────┴──────────────┴──────────────┘
 │                                                              │
 │  [+ Add Transaction] [📊 Reports] [⚙️ Settings]             │
@@ -631,7 +631,7 @@ Get consolidated summary across ALL cash books for the doctor.
 │  [Select Category ▼]                                         │
 │                                                              │
 │  Amount *                                                    │
-│  [________] ₹                                                │
+│  [________] Rs                                                │
 │                                                              │
 │  Transaction Date *                                          │
 │  [2026-02-28]                                                │
@@ -661,15 +661,15 @@ Get consolidated summary across ALL cash books for the doctor.
 │                                                              │
 │  Cash Books:                                                 │
 │  ┌───────────────────────────────────────────────────────────┐
-│  │ [📕] Medicine Book                 ₹15,000    [Edit] [Del]│
+│  │ [📕] Medicine Book                 Rs15,000    [Edit] [Del]│
 │  │      Medicines and pharmacy stock                          │
 │  └───────────────────────────────────────────────────────────┘
 │  ┌───────────────────────────────────────────────────────────┐
-│  │ [📗] Equipment Book                ₹10,000    [Edit] [Del] │
+│  │ [📗] Equipment Book                Rs10,000    [Edit] [Del] │
 │  │      Medical equipment purchases                           │
 │  └───────────────────────────────────────────────────────────┘
 │  ┌───────────────────────────────────────────────────────────┐
-│  │ [📙] General Book                   ₹5,000    [Edit] [Del] │
+│  │ [📙] General Book                   Rs5,000    [Edit] [Del] │
 │  │      Miscellaneous transactions                            │
 │  └───────────────────────────────────────────────────────────┘
 │                                                              │
@@ -714,9 +714,9 @@ Get consolidated summary across ALL cash books for the doctor.
 │  Period: [From 2026-01-01] [To 2026-02-28] [Update]        │
 │                                                              │
 │  Overall Summary:                                            │
-│  Total Income:      ₹100,000                                 │
-│  Total Expenses:    ₹70,000                                  │
-│  Net Profit:        ₹30,000                                  │
+│  Total Income:      Rs100,000                                 │
+│  Total Expenses:    Rs70,000                                  │
+│  Net Profit:        Rs30,000                                  │
 │                                                              │
 │  ┌──────────────┬──────────┬──────────┬──────────┐           │
 │  │ Cash Book    │ Income   │ Expenses │ Balance  │           │

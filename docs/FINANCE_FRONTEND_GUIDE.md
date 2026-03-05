@@ -1154,15 +1154,15 @@ export function FinanceDashboard() {
       <div className="overview">
         <div className="card total-income">
           <span className="label">Total Income</span>
-          <span className="value">+₹{summary?.total_cash_in?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+          <span className="value">+Rs{summary?.total_cash_in?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
         </div>
         <div className="card total-expense">
           <span className="label">Total Expenses</span>
-          <span className="value">-₹{summary?.total_cash_out?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+          <span className="value">-Rs{summary?.total_cash_out?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
         </div>
         <div className={`card net-balance ${summary?.net_balance >= 0 ? 'positive' : 'negative'}`}>
           <span className="label">Net Balance</span>
-          <span className="value">₹{summary?.net_balance?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+          <span className="value">Rs{summary?.net_balance?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
         </div>
       </div>
 

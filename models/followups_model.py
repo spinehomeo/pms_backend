@@ -1,8 +1,9 @@
 # models/followup_models.py
 import uuid
-from datetime import date
-from typing import Optional, List
-from sqlmodel import Field, Relationship, SQLModel
+from datetime import date, datetime
+from typing import Optional, List, Dict, Any
+from sqlmodel import Field, Relationship, SQLModel, Column
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 # ========== DATABASE MODELS (CRUD) ==========
@@ -15,6 +16,12 @@ class FollowUpBase(SQLModel):
     new_symptoms: Optional[str] = Field(default=None)
     general_state: Optional[str] = Field(default=None)
     plan: Optional[str] = Field(default=None)
+    
+    # Dynamic fields stored as JSON
+    custom_fields: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
 
 
 class FollowUp(FollowUpBase, table=True):
@@ -40,7 +47,11 @@ class FollowUp(FollowUpBase, table=True):
     follow_up_date: date = Field(default_factory=date.today)
     interval_days: int = Field(default=30, ge=7)
     next_follow_up_date: Optional[date] = Field(default=None)
-    status: str = Field(default="scheduled", max_length=50)  # From FollowupStatus enum: scheduled, completed, pending, cancelled
+    status: str = Field(default="scheduled", max_length=50)  # From FollowupStatus enum: scheduled, confirmed, completed, case_closed, patient_left, cancelled
+    
+    # Payment tracking - Followup is treated as next appointment with payment workflow
+    payment_confirmed: bool = Field(default=False)
+    payment_confirmed_date: Optional[datetime] = Field(default=None)
     
     # Relationships
     case: "PatientCase" = Relationship(back_populates="follow_ups")
@@ -62,6 +73,8 @@ class FollowUpCreate(SQLModel):
     plan: Optional[str] = None
     next_follow_up_date: Optional[date] = None
     status: Optional[str] = Field(default="scheduled", max_length=50)  # From FollowupStatus enum
+    payment_confirmed: Optional[bool] = Field(default=False)  # Payment confirmation status
+    custom_fields: Optional[Dict[str, Any]] = None  # Dynamic custom fields
 
 
 class FollowUpUpdate(SQLModel):
@@ -75,6 +88,8 @@ class FollowUpUpdate(SQLModel):
     plan: Optional[str] = None
     next_follow_up_date: Optional[date] = None
     status: Optional[str] = Field(None, max_length=50)  # From FollowupStatus enum
+    payment_confirmed: Optional[bool] = None  # Payment confirmation status
+    custom_fields: Optional[Dict[str, Any]] = None  # Dynamic custom fields
 
 
 # ========== RESPONSE MODELS (API Output) ==========
@@ -88,8 +103,11 @@ class FollowUpPublic(FollowUpBase):
     interval_days: int
     next_follow_up_date: Optional[date] = None
     status: str  # From FollowupStatus enum
+    payment_confirmed: bool = False  # Payment confirmation status
+    payment_confirmed_date: Optional[datetime] = None  # When payment was confirmed
     patient_name: Optional[str] = None
     case_number: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
 
 
 class FollowUpsPublic(SQLModel):

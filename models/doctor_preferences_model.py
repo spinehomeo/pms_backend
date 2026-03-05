@@ -71,3 +71,60 @@ STANDARD_FIELDS = [
     {"field_name": "causation", "display_name": "Causation", "field_type": "text", "default_required": False},
     {"field_name": "lab_reports", "display_name": "Lab Reports", "field_type": "textarea", "default_required": False},
 ]
+
+
+class DoctorFollowUpFieldPreference(SQLModel, table=True):
+    """Store doctor's preferred follow-up fields and their configurations"""
+    __tablename__ = "doctor_followup_field_preference"
+    
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    doctor_id: uuid.UUID = Field(
+        foreign_key="user.id",
+        nullable=False,
+        index=True
+    )
+    
+    # Field name as stored in database
+    field_name: str = Field(max_length=100, index=True)
+    
+    # Display name for the field (can be different from field_name)
+    display_name: str = Field(max_length=100)
+    
+    # Field type: text, textarea, number, date, select, etc.
+    field_type: str = Field(default="text", max_length=50)
+    
+    # Whether this field is required
+    is_required: bool = Field(default=False)
+    
+    # Whether this field is enabled for this doctor
+    is_enabled: bool = Field(default=True)
+    
+    # Position/order in the form
+    position: int = Field(default=0)
+    
+    # Field configuration (options for select, validation rules, etc.)
+    config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
+    
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = Field(default=None)
+    
+    # Composite unique constraint
+    __table_args__ = (
+        sa.UniqueConstraint('doctor_id', 'field_name', name='uq_doctor_followup_field'),
+    )
+
+
+# Standard field definitions for follow-ups that doctors can enable/disable
+FOLLOWUP_STANDARD_FIELDS = [
+    {"field_name": "subjective_improvement", "display_name": "Subjective Improvement", "field_type": "textarea", "default_required": False},
+    {"field_name": "objective_findings", "display_name": "Objective Findings", "field_type": "textarea", "default_required": False},
+    {"field_name": "aggravation", "display_name": "Aggravation", "field_type": "textarea", "default_required": False},
+    {"field_name": "amelioration", "display_name": "Amelioration", "field_type": "textarea", "default_required": False},
+    {"field_name": "new_symptoms", "display_name": "New Symptoms", "field_type": "textarea", "default_required": False},
+    {"field_name": "general_state", "display_name": "General State", "field_type": "textarea", "default_required": False},
+    {"field_name": "plan", "display_name": "Plan", "field_type": "textarea", "default_required": False},
+]

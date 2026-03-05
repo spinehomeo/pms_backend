@@ -102,8 +102,10 @@ ENUM_OPTIONS_SEEDS = {
     ],
     "FollowupStatus": [
         ("scheduled", "Scheduled"),
+        ("confirmed", "Payment Confirmed"),
         ("completed", "Completed"),
-        ("pending", "Pending"),
+        ("case_closed", "Case Closed"),
+        ("patient_left", "Patient Left"),
         ("cancelled", "Cancelled"),
     ],
     "CaseStatus": [

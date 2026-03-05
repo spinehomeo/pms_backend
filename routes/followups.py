@@ -1,6 +1,6 @@
 # api/routes/followups.py
 import uuid
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +10,7 @@ from api.deps import CurrentUser, SessionDep
 from models.followups_model import (
     FollowUp, FollowUpCreate, FollowUpUpdate, FollowUpPublic, FollowUpsPublic,
 )
+from models.doctor_preferences_model import DoctorFollowUpFieldPreference, FOLLOWUP_STANDARD_FIELDS
 from models.patients_model import Patient
 from models.prescriptions_model import Prescription
 from models.cases_model import PatientCase
@@ -17,6 +18,56 @@ from models.login_model import Message
 from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/followups", tags=["🔔 Follow-ups"])
+
+
+def validate_followup_fields(
+    doctor_id: uuid.UUID, 
+    followup_data: Dict[str, Any], 
+    session: SessionDep
+) -> Dict[str, Any]:
+    """
+    Validate follow-up fields against doctor's preferences and check required fields.
+    """
+    # Get doctor's field preferences
+    preferences = session.exec(
+        select(DoctorFollowUpFieldPreference).where(
+            DoctorFollowUpFieldPreference.doctor_id == doctor_id
+        )
+    ).all()
+    
+    # Create a dictionary of preferences by field name
+    pref_dict = {pref.field_name: pref for pref in preferences}
+    
+    # Check required fields
+    for pref in preferences:
+        if pref.is_required and pref.is_enabled:
+            field_value = followup_data.get(pref.field_name)
+            if field_value is None or (isinstance(field_value, str) and field_value.strip() == ""):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Required field '{pref.display_name}' is missing or empty"
+                )
+    
+    # Filter custom_fields to only include enabled custom fields
+    custom_fields = followup_data.get("custom_fields")
+    if custom_fields:
+        # Get enabled custom fields (non-standard fields)
+        standard_field_names = {f["field_name"] for f in FOLLOWUP_STANDARD_FIELDS}
+        enabled_custom_fields = [
+            pref.field_name for pref in preferences 
+            if pref.field_name not in standard_field_names
+            and pref.is_enabled
+        ]
+        
+        # Filter custom_fields
+        validated_custom = {
+            field_name: value 
+            for field_name, value in custom_fields.items() 
+            if field_name in enabled_custom_fields
+        }
+        followup_data["custom_fields"] = validated_custom or None
+    
+    return followup_data
 
 
 @router.get("/", response_model=FollowUpsPublic)
@@ -196,6 +247,9 @@ def create_followup(
         "next_follow_up_date": next_follow_up
     })
     
+    # Validate fields and custom fields
+    followup_data = validate_followup_fields(current_user.id, followup_data, session)
+    
     # Validate status if provided
     if followup_data.get("status"):
         if not EnumService.validate_value(session, "FollowupStatus", followup_data["status"], current_user.id):
@@ -254,6 +308,9 @@ def update_followup(
             raise HTTPException(status_code=404, detail="Prescription not found")
     
     update_dict = followup_in.model_dump(exclude_unset=True)
+    
+    # Validate fields and custom fields
+    update_dict = validate_followup_fields(current_user.id, update_dict, session)
     
     # Validate status if provided
     if update_dict.get("status"):
@@ -504,3 +561,97 @@ def schedule_next_followup(
         "current_followup": followup_public,
         "scheduled_followup": new_followup_public
     }
+
+
+@router.post("/{followup_id}/confirm-payment")
+def confirm_followup_payment(
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_id: uuid.UUID
+) -> FollowUpPublic:
+    """
+    Confirm payment for a follow-up and update status to 'confirmed'.
+    
+    This marks the follow-up as confirmed after payment has been received.
+    The followup transitions from 'scheduled' to 'confirmed' status.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can confirm follow-up payments")
+    
+    followup = session.get(FollowUp, followup_id)
+    if not followup:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    
+    if followup.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to confirm this follow-up payment")
+    
+    # Update payment confirmation
+    followup.payment_confirmed = True
+    followup.payment_confirmed_date = datetime.now()
+    
+    # Update status to 'confirmed'
+    if not EnumService.validate_value(session, "FollowupStatus", "confirmed", current_user.id):
+        raise HTTPException(status_code=400, detail="Confirmed status is not available for your account")
+    
+    followup.status = "confirmed"
+    
+    session.add(followup)
+    session.commit()
+    session.refresh(followup)
+    
+    followup_dict = {
+        **followup.__dict__,
+        "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+        "case_number": followup.case.case_number if followup.case else None
+    }
+    return FollowUpPublic(**followup_dict)
+
+
+@router.post("/{followup_id}/close-case")
+def close_followup_case(
+    session: SessionDep,
+    current_user: CurrentUser,
+    followup_id: uuid.UUID
+) -> FollowUpPublic:
+    """
+    Close the case associated with a follow-up and update status to 'case_closed'.
+    
+    This marks the follow-up as case closed, indicating that the patient's
+    treatment and follow-ups are complete. The case status will also be updated to 'closed'.
+    """
+    if not current_user.is_doctor:
+        raise HTTPException(status_code=403, detail="Only doctors can close cases")
+    
+    followup = session.get(FollowUp, followup_id)
+    if not followup:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    
+    if followup.doctor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to close this case")
+    
+    # Update followup status to 'case_closed'
+    if not EnumService.validate_value(session, "FollowupStatus", "case_closed", current_user.id):
+        raise HTTPException(status_code=400, detail="Case closed status is not available for your account")
+    
+    followup.status = "case_closed"
+    
+    # Also update the associated case status to 'closed'
+    case = session.get(PatientCase, followup.case_id)
+    if case:
+        # Validate case status enum
+        if not EnumService.validate_value(session, "CaseStatus", "closed", current_user.id):
+            raise HTTPException(status_code=400, detail="Case closed status is not available for your account")
+        
+        case.status = "closed"
+        session.add(case)
+    
+    session.add(followup)
+    session.commit()
+    session.refresh(followup)
+    
+    followup_dict = {
+        **followup.__dict__,
+        "patient_name": followup.case.patient.full_name if followup.case and followup.case.patient else None,
+        "case_number": followup.case.case_number if followup.case else None
+    }
+    return FollowUpPublic(**followup_dict)
