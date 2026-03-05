@@ -10,6 +10,8 @@ from routes import (
     followups,
     login,
     medicines,
+    onsite_consultation,
+    onsite_patient,
     patients,
     prescriptions,
     private,
@@ -38,6 +40,8 @@ api_router.include_router(doctor_preferences.router)
 api_router.include_router(finance.router)
 api_router.include_router(followups.router)
 api_router.include_router(medicines.router)
+api_router.include_router(onsite_patient.router)
+api_router.include_router(onsite_consultation.router)
 api_router.include_router(patients.router)
 api_router.include_router(prescriptions.router)
 api_router.include_router(reports.router)

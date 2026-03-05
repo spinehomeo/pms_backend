@@ -42,6 +42,9 @@ from .web_content_model import (
     ContactInformation,
 )
 
+# Onsite consultation models
+from .onsite_consultation_model import SequenceCounter, OnsiteConsultationAudit
+
 __all__ = [
     # Base models
     "UserBase", "PatientBase", "PatientCaseBase", 
@@ -61,6 +64,7 @@ __all__ = [
     "EnumType", "EnumOption", "DoctorEnumPreference",
     "CashBook", "CashBookCustomField",
     "FinanceTransaction", "TransactionCustomFieldValue",
+    "SequenceCounter", "OnsiteConsultationAudit",
     
     # Web content models
     "AboutDoctor", "Qualification", "Specialization",

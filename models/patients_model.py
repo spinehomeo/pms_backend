@@ -135,17 +135,6 @@ class PatientPublic(PatientBase):
     is_active: bool
     age: Optional[int] = None
     doctor: DoctorBasicInfo  # Return doctor details instead of just doctor_id
-    
-    @property
-    def age(self) -> Optional[int]:
-        """Calculate age for API response"""
-        if not self.date_of_birth:
-            return None
-        today = date.today()
-        age = today.year - self.date_of_birth.year
-        if (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day):
-            age -= 1
-        return age
 
 
 class PatientsPublic(SQLModel):
