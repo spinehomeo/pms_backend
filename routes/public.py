@@ -40,7 +40,7 @@ def list_doctors_public(
     """
     statement = (
         select(User)
-        .where(User.role == "doctor", User.is_active == True)
+        .where((User.role == "doctor") & (User.is_active == True))
         .offset(skip)
         .limit(limit)
     )

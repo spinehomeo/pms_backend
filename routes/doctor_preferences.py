@@ -112,8 +112,7 @@ def get_doctor_fields(
     
     preferences = session.exec(
         select(FieldModel).where(
-            FieldModel.doctor_id == current_user.id,
-            FieldModel.is_enabled == True
+            (FieldModel.doctor_id == current_user.id) & (FieldModel.is_enabled == True)
         ).order_by(FieldModel.position)
     ).all()
     
@@ -240,8 +239,7 @@ def toggle_field(
     # Find the preference
     preference = session.exec(
         select(FieldModel).where(
-            FieldModel.doctor_id == current_user.id,
-            FieldModel.field_name == field_name
+            (FieldModel.doctor_id == current_user.id) & (FieldModel.field_name == field_name)
         )
     ).first()
     
@@ -313,8 +311,7 @@ def add_custom_field(
     # Check if field already exists
     existing = session.exec(
         select(FieldModel).where(
-            FieldModel.doctor_id == current_user.id,
-            FieldModel.field_name == field_name
+            (FieldModel.doctor_id == current_user.id) & (FieldModel.field_name == field_name)
         )
     ).first()
     
@@ -394,8 +391,7 @@ def edit_custom_field(
 
     preference = session.exec(
         select(FieldModel).where(
-            FieldModel.doctor_id == current_user.id,
-            FieldModel.field_name == field_name
+            (FieldModel.doctor_id == current_user.id) & (FieldModel.field_name == field_name)
         )
     ).first()
 
@@ -465,8 +461,7 @@ def delete_custom_field(
     
     preference = session.exec(
         select(FieldModel).where(
-            FieldModel.doctor_id == current_user.id,
-            FieldModel.field_name == field_name
+            (FieldModel.doctor_id == current_user.id) & (FieldModel.field_name == field_name)
         )
     ).first()
     
