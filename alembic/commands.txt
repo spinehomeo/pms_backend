@@ -22,3 +22,5 @@ uv run alembic current
 
 6️⃣ One-command FULL HEALTH CHECK
 uv run alembic revision --autogenerate -m "pre-deploy schema check"
+
+uv run python -m alembic history --verbose
