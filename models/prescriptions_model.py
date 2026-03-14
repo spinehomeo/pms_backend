@@ -9,7 +9,7 @@ from sqlmodel import Field, Relationship, SQLModel
 class PrescriptionBase(SQLModel):
     """Base prescription model"""
     prescription_type: str = Field(max_length=100)
-    dosage: str = Field(max_length=200)
+    dosage: Optional[str] = Field(default=None, max_length=200)
     prescription_duration: str = Field(max_length=100)          # Human-readable string e.g. "30 days"
     duration_days: Optional[int] = Field(default=None, ge=1)    # NEW: integer version for auto date calculation
     instructions: Optional[str] = Field(default=None)

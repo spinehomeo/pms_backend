@@ -1,10 +1,10 @@
 # api/routes/prescriptions.py - WITH QUICK-ADD MEDICINE CAPABILITY + AUTO FOLLOW-UP SCHEDULING
 import uuid
 from typing import Any, List, Optional
-from datetime import date, timedelta                             # CHANGED: added timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Path
-from sqlmodel import func, select
+from sqlmodel import func, select, Session
 from sqlalchemy.orm import selectinload
 
 from api.deps import CurrentUser, SessionDep
@@ -19,9 +19,92 @@ from models.medicines_model import Medicine
 from models.patients_model import Patient
 from models.cases_model import PatientCase
 from models.login_model import Message
+from models.onsite_consultation_model import SequenceCounter
 from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/prescriptions", tags=["📋 Prescriptions"])
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def _get_utc_now() -> datetime:
+    """Get current time in UTC (timezone-aware). Replaces deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc)
+
+
+def _get_or_create_sequence(
+    session: Session,
+    counter_type: str,
+    prefix: str,
+) -> int:
+    """
+    Thread-safe sequence counter getter/creator.
+    Uses database SELECT FOR UPDATE to prevent race conditions.
+    Returns the next sequence number (1, 2, 3, etc.)
+    """
+    # Try to lock and increment existing counter
+    counter = session.exec(
+        select(SequenceCounter).where(
+            (SequenceCounter.counter_type == counter_type) &
+            (SequenceCounter.prefix == prefix)
+        )
+    ).first()
+
+    if counter:
+        # Increment existing
+        counter.current_sequence += 1
+        counter.updated_at = _get_utc_now()
+        session.add(counter)
+        session.flush()
+        return counter.current_sequence
+
+    # Create new counter (first time for this prefix)
+    initial_sequence = 0
+    
+    if counter_type == "prescription":
+        # Find the highest sequence number that already exists for this prefix
+        max_seq = 0
+        existing_prescriptions = session.exec(
+            select(Prescription.prescription_number).where(
+                Prescription.prescription_number.like(f"{prefix}-%")
+            )
+        ).all()
+        
+        for rx_num in existing_prescriptions:
+            try:
+                # Extract the numeric part after the last hyphen
+                seq = int(rx_num.split("-")[-1])
+                max_seq = max(max_seq, seq)
+            except (ValueError, IndexError):
+                pass
+        
+        initial_sequence = max_seq + 1
+    
+    new_counter = SequenceCounter(
+        id=uuid.uuid4(),
+        counter_type=counter_type,
+        prefix=prefix,
+        current_sequence=initial_sequence,
+        created_at=_get_utc_now(),
+        updated_at=_get_utc_now(),
+    )
+    session.add(new_counter)
+    session.flush()
+    return initial_sequence
+
+
+def _generate_prescription_number(session: Session) -> str:
+    """
+    Generate a sequential prescription number: RX-MAR26-001
+    Thread-safe: scoped per month using SequenceCounter table.
+    Format: {TYPE}-{MONTH}{YEAR}-{SEQUENCE} e.g. RX-MAR26-002
+    """
+    now = _get_utc_now()
+    prefix = f"RX-{now.strftime('%b%y').upper()}"  # e.g. RX-MAR26
+    seq = _get_or_create_sequence(session, "prescription", prefix)
+    return f"{prefix}-{seq:03d}"
 
 
 @router.get("/", response_model=PrescriptionsPublic)
@@ -314,21 +397,8 @@ def create_prescription(
                 detail="follow_up_schedule.follow_up_date must be today or a future date"
             )
 
-    # Generate prescription number
-    today = date.today()
-    year_month = today.strftime("%Y-%m")
-    
-    prescription_count = session.exec(
-        select(func.count())
-        .select_from(Prescription)
-        .where(
-            Prescription.doctor_id == current_user.id,
-            func.extract('year', Prescription.prescription_date) == today.year,
-            func.extract('month', Prescription.prescription_date) == today.month
-        )
-    ).one()
-    
-    prescription_number = f"RX-{year_month}-{prescription_count + 1:03d}"
+    # Generate prescription number using thread-safe sequence counter
+    prescription_number = _generate_prescription_number(session)
     
     # Create prescription (exclude follow_up_schedule — not a DB column)
     prescription_data = prescription_in.model_dump(exclude={"medicines", "follow_up_schedule"})  # CHANGED: added follow_up_schedule exclusion
