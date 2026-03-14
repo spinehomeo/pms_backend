@@ -29,7 +29,8 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlmodel import SQLModel, Session, Field, select
-from sqlalchemy import func
+from sqlalchemy import func, insert, and_
+from sqlalchemy.exc import IntegrityError
 
 from api.deps import get_db, get_current_user
 from models.users_model import User
@@ -118,14 +119,14 @@ class OnsiteCaseIn(SQLModel):
 class OnsitePrescriptionIn(SQLModel):
     """
     Prescription block — optional.
-    dosage and prescription_duration are required.
+    prescription_duration is required.
     """
     # --- Required ---
     prescription_type: str = Field(max_length=100)
-    dosage: str = Field(max_length=200)
     prescription_duration: str = Field(max_length=100)
 
     # --- Optional ---
+    dosage: Optional[str] = Field(default=None, max_length=200)
     duration_days: Optional[int] = Field(default=None, ge=1)
     instructions: Optional[str] = None
     follow_up_advice: Optional[str] = None
@@ -221,66 +222,45 @@ def _get_or_create_sequence(
     prefix: str,  # e.g. "C-MAR26" or "RX-2026-03"
 ) -> int:
     """
-    Thread-safe sequence counter getter/creator.
-    Uses database SELECT FOR UPDATE to prevent race conditions.
+    Thread-safe sequence counter getter/creator with atomic INSERT.
+    
+    Two-step process:
+    1. Calculate max sequence from existing records
+    2. INSERT new counter with ON CONFLICT DO NOTHING (only one transaction wins)
+    3. SELECT with FOR UPDATE lock and increment
     
     Returns the next sequence number (1, 2, 3, etc.)
     """
-    # Try to lock and increment existing counter
-    counter = session.exec(
-        select(SequenceCounter).where(
-            (SequenceCounter.counter_type == counter_type) &
-            (SequenceCounter.prefix == prefix)
-        )
-    ).first()
-
-    if counter:
-        # Increment existing
-        counter.current_sequence += 1
-        counter.updated_at = _get_utc_now()
-        session.add(counter)
-        session.flush()
-        return counter.current_sequence
-
-    # Create new counter (first time for this prefix)
-    # Check if any existing records already exist with this prefix to avoid duplicates
+    # Step 1: Scan existing records to find the highest sequence number for this prefix
     initial_sequence = 0
     
     if counter_type == "case":
-        # Find the highest sequence number that already exists for this prefix
-        # e.g., if cases C-MAR26-001, C-MAR26-003, C-MAR26-005 exist, next is 006
-        max_seq = 0
-        from sqlalchemy import func as sa_func
-        from sqlalchemy import cast, Integer as SAInteger
-        
-        # Extract the numeric suffix from case_number and find max
         existing_cases = session.exec(
             select(PatientCase.case_number).where(
                 PatientCase.case_number.like(f"{prefix}-%")
             )
         ).all()
         
+        max_seq = 0
         for case_num in existing_cases:
             try:
-                # Extract the numeric part after the last hyphen
                 seq = int(case_num.split("-")[-1])
                 max_seq = max(max_seq, seq)
             except (ValueError, IndexError):
                 pass
         
         initial_sequence = max_seq + 1
+        
     elif counter_type == "prescription":
-        # Find the highest sequence number that already exists for this prefix
-        max_seq = 0
         existing_prescriptions = session.exec(
             select(Prescription.prescription_number).where(
                 Prescription.prescription_number.like(f"{prefix}-%")
             )
         ).all()
         
+        max_seq = 0
         for rx_num in existing_prescriptions:
             try:
-                # Extract the numeric part after the last hyphen
                 seq = int(rx_num.split("-")[-1])
                 max_seq = max(max_seq, seq)
             except (ValueError, IndexError):
@@ -288,40 +268,112 @@ def _get_or_create_sequence(
         
         initial_sequence = max_seq + 1
     
-    new_counter = SequenceCounter(
-        id=uuid.uuid4(),
-        counter_type=counter_type,
-        prefix=prefix,
-        current_sequence=initial_sequence,
-        created_at=_get_utc_now(),
-        updated_at=_get_utc_now(),
-    )
-    session.add(new_counter)
+    # Step 2: Try to INSERT new counter atomically (only one transaction succeeds)
+    try:
+        stmt = insert(SequenceCounter).values(
+            id=uuid.uuid4(),
+            counter_type=counter_type,
+            prefix=prefix,
+            current_sequence=initial_sequence,
+            created_at=_get_utc_now(),
+            updated_at=_get_utc_now(),
+        ).on_conflict_do_nothing()
+        
+        session.exec(stmt)
+        session.flush()
+    except Exception:
+        # If INSERT fails for any reason, proceed to SELECT
+        pass
+    
+    # Step 3: SELECT with FOR UPDATE lock, increment, and return
+    # Both concurrent transactions will serialize here on the lock
+    counter = session.exec(
+        select(SequenceCounter).where(
+            and_(
+                SequenceCounter.counter_type == counter_type,
+                SequenceCounter.prefix == prefix
+            )
+        ).with_for_update()
+    ).first()
+    
+    if not counter:
+        # Fallback: if somehow still missing, create it here
+        counter = SequenceCounter(
+            id=uuid.uuid4(),
+            counter_type=counter_type,
+            prefix=prefix,
+            current_sequence=initial_sequence,
+            created_at=_get_utc_now(),
+            updated_at=_get_utc_now(),
+        )
+        session.add(counter)
+        session.flush()
+    
+    # Increment and return
+    counter.current_sequence += 1
+    counter.updated_at = _get_utc_now()
+    session.add(counter)
     session.flush()
-    return initial_sequence
+    
+    return counter.current_sequence
 
 
-def _generate_case_number(session: Session) -> str:
+def _generate_case_number(session: Session, retry_offset: int = 0) -> str:
     """
     Generate a sequential case number: C-MAR26-017
-    Thread-safe: scoped per month using SequenceCounter table.
+    Simplified approach: find max existing number and increment.
+    If collision occurs, caller should retry with retry_offset incremented.
+    
+    retry_offset: How many times we've already retried (adds to result)
     """
     now = _get_utc_now()
     prefix = f"C-{now.strftime('%b%y').upper()}"  # e.g. C-MAR26
-    seq = _get_or_create_sequence(session, "case", prefix)
-    return f"{prefix}-{seq:03d}"
+    
+    # Find the highest sequence number for this month
+    existing_cases = session.exec(
+        select(PatientCase.case_number).where(
+            PatientCase.case_number.like(f"{prefix}-%")
+        )
+    ).all()
+    
+    max_seq = 0
+    for case_num in existing_cases:
+        try:
+            seq = int(case_num.split("-")[-1])
+            max_seq = max(max_seq, seq)
+        except (ValueError, IndexError):
+            pass
+    
+    return f"{prefix}-{max_seq + 1 + retry_offset:03d}"
 
 
-def _generate_prescription_number(session: Session) -> str:
+def _generate_prescription_number(session: Session, retry_offset: int = 0) -> str:
     """
     Generate a sequential prescription number: RX-MAR26-001
-    Thread-safe: scoped per month using SequenceCounter table.
-    Follows same pattern as case numbers: {TYPE}-{MONTH}{YEAR}-{SEQUENCE}
+    Simplified approach: find max existing number and increment.
+    If collision occurs, caller should retry with retry_offset incremented.
+    
+    retry_offset: How many times we've already retried (adds to result)
     """
     now = _get_utc_now()
     prefix = f"RX-{now.strftime('%b%y').upper()}"  # e.g. RX-MAR26
-    seq = _get_or_create_sequence(session, "prescription", prefix)
-    return f"{prefix}-{seq:03d}"
+    
+    # Find the highest sequence number for this month
+    existing_prescriptions = session.exec(
+        select(Prescription.prescription_number).where(
+            Prescription.prescription_number.like(f"{prefix}-%")
+        )
+    ).all()
+    
+    max_seq = 0
+    for rx_num in existing_prescriptions:
+        try:
+            seq = int(rx_num.split("-")[-1])
+            max_seq = max(max_seq, seq)
+        except (ValueError, IndexError):
+            pass
+    
+    return f"{prefix}-{max_seq + 1 + retry_offset:03d}"
 
 
 def _resolve_medicine(
@@ -538,69 +590,121 @@ def create_onsite_consultation(
             )
 
         # ------------------------------------------------------------------
-        # STEP 3 — Case
+        # STEP 3 — Case (with retry on case_number collision)
         # ------------------------------------------------------------------
-        case_number = _generate_case_number(session)
-
-        case = PatientCase(
-            id=uuid.uuid4(),
-            doctor_id=current_user.id,
-            patient_id=patient.id,
-            appointment_id=appointment.id,
-            case_number=case_number,
-            case_date=today,
-            status="open",
-            chief_complaint_patient=payload.case.chief_complaint_patient,
-            chief_complaint_duration=payload.case.chief_complaint_duration,
-            physicals=payload.case.physicals,
-            noted_complaint_doctor=payload.case.noted_complaint_doctor,
-            peculiar_symptoms=payload.case.peculiar_symptoms,
-            causation=payload.case.causation,
-            lab_reports=payload.case.lab_reports,
-            custom_fields=payload.case.custom_fields,
-        )
-        try:
-            session.add(case)
-            session.flush()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to create case: {str(e)}",
-            )
+        case = None
+        max_retries = 5
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                case_number = _generate_case_number(session, retry_offset=retry_count)
+                case = PatientCase(
+                    id=uuid.uuid4(),
+                    doctor_id=current_user.id,
+                    patient_id=patient.id,
+                    appointment_id=appointment.id,
+                    case_number=case_number,
+                    case_date=today,
+                    status="open",
+                    chief_complaint_patient=payload.case.chief_complaint_patient,
+                    chief_complaint_duration=payload.case.chief_complaint_duration,
+                    physicals=payload.case.physicals,
+                    noted_complaint_doctor=payload.case.noted_complaint_doctor,
+                    peculiar_symptoms=payload.case.peculiar_symptoms,
+                    causation=payload.case.causation,
+                    lab_reports=payload.case.lab_reports,
+                    custom_fields=payload.case.custom_fields,
+                )
+                session.add(case)
+                session.flush()
+                break  # Success — exit retry loop
+            except IntegrityError as e:
+                if "case_number" in str(e).lower():
+                    # Duplicate case_number — expunge failed case and retry with new sequence
+                    # DO NOT rollback; only remove the case from session state
+                    session.expunge(case)
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        session.rollback()  # Only rollback after max retries exceeded
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Failed to generate unique case number after {max_retries} attempts. Please retry.",
+                        )
+                    # Continue loop to retry with new sequence number
+                else:
+                    # Different integrity error — don't retry
+                    session.rollback()
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to create case: {str(e)}",
+                    )
+            except Exception as e:
+                session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to create case: {str(e)}",
+                )
 
         # ------------------------------------------------------------------
-        # STEP 4 — Prescription (optional)
+        # STEP 4 — Prescription (optional, with retry on prescription_number collision)
         # ------------------------------------------------------------------
         prescription = None
         if payload.prescription:
             rx_in = payload.prescription
-            prescription_number = _generate_prescription_number(session)
-
-            prescription = Prescription(
-                id=uuid.uuid4(),
-                doctor_id=current_user.id,
-                case_id=case.id,
-                prescription_number=prescription_number,
-                prescription_date=today,
-                status=rx_in.status,
-                prescription_type=rx_in.prescription_type,
-                dosage=rx_in.dosage,
-                prescription_duration=rx_in.prescription_duration,
-                duration_days=rx_in.duration_days,
-                instructions=rx_in.instructions,
-                follow_up_advice=rx_in.follow_up_advice,
-                dietary_restrictions=rx_in.dietary_restrictions,
-                avoidance=rx_in.avoidance,
-                notes=rx_in.notes,
-            )
-            try:
-                session.add(prescription)
-                session.flush()
-            except Exception as e:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Failed to create prescription: {str(e)}",
-                )
+            prescription = None
+            max_retries = 5
+            retry_count = 0
+            
+            while retry_count < max_retries:
+                try:
+                    prescription_number = _generate_prescription_number(session, retry_offset=retry_count)
+                    prescription = Prescription(
+                        id=uuid.uuid4(),
+                        doctor_id=current_user.id,
+                        case_id=case.id,
+                        prescription_number=prescription_number,
+                        prescription_date=today,
+                        status=rx_in.status,
+                        prescription_type=rx_in.prescription_type,
+                        dosage=rx_in.dosage,
+                        prescription_duration=rx_in.prescription_duration,
+                        duration_days=rx_in.duration_days,
+                        instructions=rx_in.instructions,
+                        follow_up_advice=rx_in.follow_up_advice,
+                        dietary_restrictions=rx_in.dietary_restrictions,
+                        avoidance=rx_in.avoidance,
+                        notes=rx_in.notes,
+                    )
+                    session.add(prescription)
+                    session.flush()
+                    break  # Success — exit retry loop
+                except IntegrityError as e:
+                    if "prescription_number" in str(e).lower():
+                        # Duplicate prescription_number — expunge failed prescription and retry
+                        # DO NOT rollback; only remove from session state
+                        session.expunge(prescription)
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            session.rollback()  # Only rollback after max retries exceeded
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Failed to generate unique prescription number after {max_retries} attempts. Please retry.",
+                            )
+                        # Continue loop to retry with new sequence number
+                    else:
+                        # Different integrity error — don't retry
+                        session.rollback()
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Failed to create prescription: {str(e)}",
+                        )
+                except Exception as e:
+                    session.rollback()
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to create prescription: {str(e)}",
+                    )
 
             # Add medicine lines
             for med_in in rx_in.medicines:

@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Query, Path
 from sqlmodel import func, select, Session
 from sqlalchemy.orm import selectinload
+from sqlalchemy import insert, and_
 
 from api.deps import CurrentUser, SessionDep
 from models.prescriptions_model import (
@@ -19,7 +20,7 @@ from models.medicines_model import Medicine
 from models.patients_model import Patient
 from models.cases_model import PatientCase
 from models.login_model import Message
-from models.onsite_consultation_model import SequenceCounter
+from models.onsite_consultation_model import SequenceCounter, OnsiteConsultationAudit
 from utils.enum_service import EnumService
 
 router = APIRouter(prefix="/prescriptions", tags=["📋 Prescriptions"])
@@ -40,41 +41,28 @@ def _get_or_create_sequence(
     prefix: str,
 ) -> int:
     """
-    Thread-safe sequence counter getter/creator.
-    Uses database SELECT FOR UPDATE to prevent race conditions.
+    Thread-safe sequence counter getter/creator with atomic INSERT.
+    
+    Two-step process:
+    1. Calculate max sequence from existing records
+    2. INSERT new counter with ON CONFLICT DO NOTHING (only one transaction wins)
+    3. SELECT with FOR UPDATE lock and increment
+    
     Returns the next sequence number (1, 2, 3, etc.)
     """
-    # Try to lock and increment existing counter
-    counter = session.exec(
-        select(SequenceCounter).where(
-            (SequenceCounter.counter_type == counter_type) &
-            (SequenceCounter.prefix == prefix)
-        )
-    ).first()
-
-    if counter:
-        # Increment existing
-        counter.current_sequence += 1
-        counter.updated_at = _get_utc_now()
-        session.add(counter)
-        session.flush()
-        return counter.current_sequence
-
-    # Create new counter (first time for this prefix)
+    # Step 1: Scan existing records to find the highest sequence number for this prefix
     initial_sequence = 0
     
     if counter_type == "prescription":
-        # Find the highest sequence number that already exists for this prefix
-        max_seq = 0
         existing_prescriptions = session.exec(
             select(Prescription.prescription_number).where(
                 Prescription.prescription_number.like(f"{prefix}-%")
             )
         ).all()
         
+        max_seq = 0
         for rx_num in existing_prescriptions:
             try:
-                # Extract the numeric part after the last hyphen
                 seq = int(rx_num.split("-")[-1])
                 max_seq = max(max_seq, seq)
             except (ValueError, IndexError):
@@ -82,17 +70,54 @@ def _get_or_create_sequence(
         
         initial_sequence = max_seq + 1
     
-    new_counter = SequenceCounter(
-        id=uuid.uuid4(),
-        counter_type=counter_type,
-        prefix=prefix,
-        current_sequence=initial_sequence,
-        created_at=_get_utc_now(),
-        updated_at=_get_utc_now(),
-    )
-    session.add(new_counter)
+    # Step 2: Try to INSERT new counter atomically (only one transaction succeeds)
+    try:
+        stmt = insert(SequenceCounter).values(
+            id=uuid.uuid4(),
+            counter_type=counter_type,
+            prefix=prefix,
+            current_sequence=initial_sequence,
+            created_at=_get_utc_now(),
+            updated_at=_get_utc_now(),
+        ).on_conflict_do_nothing()
+        
+        session.exec(stmt)
+        session.flush()
+    except Exception:
+        # If INSERT fails for any reason, proceed to SELECT
+        pass
+    
+    # Step 3: SELECT with FOR UPDATE lock, increment, and return
+    # Both concurrent transactions will serialize here on the lock
+    counter = session.exec(
+        select(SequenceCounter).where(
+            and_(
+                SequenceCounter.counter_type == counter_type,
+                SequenceCounter.prefix == prefix
+            )
+        ).with_for_update()
+    ).first()
+    
+    if not counter:
+        # Fallback: if somehow still missing, create it here
+        counter = SequenceCounter(
+            id=uuid.uuid4(),
+            counter_type=counter_type,
+            prefix=prefix,
+            current_sequence=initial_sequence,
+            created_at=_get_utc_now(),
+            updated_at=_get_utc_now(),
+        )
+        session.add(counter)
+        session.flush()
+    
+    # Increment and return
+    counter.current_sequence += 1
+    counter.updated_at = _get_utc_now()
+    session.add(counter)
     session.flush()
-    return initial_sequence
+    
+    return counter.current_sequence
 
 
 def _generate_prescription_number(session: Session) -> str:
@@ -627,7 +652,7 @@ def update_prescription(
     return PrescriptionPublic(**rx_data)
 
 
-@router.delete("/{prescription_id}")
+@router.delete("/{prescription_id}", response_model=Message)
 def delete_prescription(
     session: SessionDep,
     current_user: CurrentUser,
@@ -635,6 +660,7 @@ def delete_prescription(
 ) -> Message:
     """
     Delete a prescription.
+    Automatically deletes related follow-ups and associated audit records if any exist.
     """
     if not current_user.is_doctor:
         raise HTTPException(status_code=403, detail="Only doctors can delete prescriptions")
@@ -646,6 +672,38 @@ def delete_prescription(
     if prescription.doctor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this prescription")
     
+    # Get all related follow-ups first
+    related_followups = session.exec(
+        select(FollowUp)
+        .where(FollowUp.prescription_id == prescription_id)
+    ).all()
+    
+    followup_ids = [fu.id for fu in related_followups]
+    
+    # Delete audit records that reference these follow-ups (must happen before deleting follow-ups)
+    if followup_ids:
+        audit_records = session.exec(
+            select(OnsiteConsultationAudit)
+            .where(OnsiteConsultationAudit.follow_up_id.in_(followup_ids))
+        ).all()
+        
+        for audit in audit_records:
+            session.delete(audit)
+    
+    # Delete related follow-ups
+    for followup in related_followups:
+        session.delete(followup)
+    
+    # Delete medicine relationships
+    related_medicines = session.exec(
+        select(PrescriptionMedicine)
+        .where(PrescriptionMedicine.prescription_id == prescription_id)
+    ).all()
+    
+    for pm in related_medicines:
+        session.delete(pm)
+    
+    # Finally delete the prescription itself
     session.delete(prescription)
     session.commit()
     return Message(message="Prescription deleted successfully")
